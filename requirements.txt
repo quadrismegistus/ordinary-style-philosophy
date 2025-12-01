@@ -1,0 +1,9 @@
+stanza
+orjsonl
+tqdm
+pandas
+hashstash[rec]
+IProgress
+nltk
+svgling
+plotnine
