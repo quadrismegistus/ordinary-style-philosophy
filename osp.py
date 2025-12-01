@@ -74,7 +74,7 @@ def get_nlp():
         NLP = stanza.Pipeline(lang='en', processors='tokenize,mwt,pos,lemma,ner,depparse,constituency', verbose=0)
     return NLP
 
-def get_nlp_doc(txt, force=False):
+def get_nlp_doc(txt, force=True):
     if not force and txt in NLP_STASH:
         return stanza.Document.from_serialized(NLP_STASH[txt])
     
