@@ -4,20 +4,24 @@ import os
 from tqdm import tqdm
 import orjsonl
 import pandas as pd
-from hashstash import HashStash
+from hashstash import HashStash, stashed_result
 import nltk
 import stanza
 import re
 
 TOTAL_PMLA = 71902
 TOTAL_JSTOR = 12412004
+TOTAL_JSTOR_DATA = 32783
 PATH_HERE = os.path.dirname(os.path.abspath(__file__))
 PATH_DATA = os.path.join(PATH_HERE, 'data')
 FN_PMLA = os.path.join(PATH_DATA, 'raw/LitStudiesJSTOR.jsonl')
 FN_JSTOR = os.path.join(PATH_DATA, 'raw/jstor_metadata_2025-11-28.jsonl.gz')
+FN_JSTOR_DATA = os.path.join(PATH_DATA, 'raw/jstor_data.jsonl.gz')
 NLP = None
 NLP_STASH = HashStash('osp_nlp')
 PMLA_STASH = HashStash('osp_pmla')
+JSTOR_HASH = HashStash('osp_jstor')
+DF_STASH = HashStash('osp_df', serializer='pickle')
 
 def iter_jsonl(fn, total=None):
     yield from tqdm(orjsonl.stream(fn), total=total)
@@ -74,13 +78,9 @@ def get_nlp():
         NLP = stanza.Pipeline(lang='en', processors='tokenize,mwt,pos,lemma,ner,depparse,constituency', verbose=0)
     return NLP
 
-def get_nlp_doc(txt, force=True):
-    if not force and txt in NLP_STASH:
-        return stanza.Document.from_serialized(NLP_STASH[txt])
-    
+def get_nlp_doc(txt):
     nlp = get_nlp()
     doc = nlp(txt)
-    NLP_STASH[txt] = doc.to_serialized()
     return doc
 
 def get_nlp_df(doc):
@@ -158,3 +158,16 @@ def get_tree_stats(tree):
         'num_parens': get_num_parens(tree),
     }
     return d
+
+@DF_STASH.stashed_result
+def get_jstor_data():
+    df = pd.DataFrame(iter_jsonl(FN_JSTOR_DATA, total=TOTAL_JSTOR_DATA))
+    df = df.rename(columns={'iid': 'id'})
+    ids = set(df.id)
+
+    ld = [d for d in iter_jstor() if d['item_id'] in ids]
+    df2 = pd.DataFrame(ld)
+    df2 = df2.rename(columns={'item_id': 'id'})
+    df2['year'] = df2['published_date'].fillna('').apply(str).apply(lambda x: x.split('-')[0]).apply(int)
+    df2['decade'] = df2['year'] // 10 * 10
+    return df2.merge(df, on='id', how='left')
