@@ -20,7 +20,7 @@ FN_JSTOR_DATA = os.path.join(PATH_DATA, 'raw/jstor_data.jsonl.gz')
 NLP = None
 NLP_STASH = HashStash('osp_nlp')
 PMLA_STASH = HashStash('osp_pmla')
-JSTOR_HASH = HashStash('osp_jstor')
+JSTOR_STASH = HashStash('osp_jstor')
 DF_STASH = HashStash('osp_df', serializer='pickle')
 
 def iter_jsonl(fn, total=None):
