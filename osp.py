@@ -1,3 +1,4 @@
+from collections import Counter
 import string
 from pprint import pprint
 import os
@@ -142,9 +143,23 @@ def get_sent_tree(sent):
     treestr = str(sent.constituency)
     return nltk.ParentedTree.fromstring(treestr)
 
+
+pos_names = {'N': 'noun', 'V': 'verb', 'J': 'adjective', 'R': 'adverb'}
+def get_pos_stats(tree):
+    pos_counter = Counter()
+    for x in tree.productions():
+        if x.is_lexical():
+            pos = x.lhs().symbol()[0]
+            if pos in pos_names:
+                pos_counter[pos_names[pos]] += 1
+    return pos_counter
+
+
 def get_tree_stats(tree):
     if not isinstance(tree, nltk.ParentedTree):
         tree = get_sent_tree(tree)
+    
+    dpos = get_pos_stats(tree)
     d = {
         'num_words': get_num_words(tree),
         'height': tree.height(),
@@ -156,6 +171,7 @@ def get_tree_stats(tree):
         'num_punct_colon': get_num_punct(tree, ':'),
         'num_punct_comma': get_num_punct(tree, ','),
         'num_parens': get_num_parens(tree),
+        **{f'num_words_{pos}': dpos[pos] for pos in dpos}
     }
     return d
 
