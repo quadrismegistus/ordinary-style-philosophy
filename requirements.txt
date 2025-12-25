@@ -7,3 +7,4 @@ IProgress
 nltk
 svgling
 plotnine
+scikit-learn
