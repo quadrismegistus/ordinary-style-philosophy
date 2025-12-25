@@ -89,3 +89,12 @@ def iter_txt_slices(txt, slice_len, ok_words):
         words = words[slice_len:]
         slice_num += 1
 
+
+def get_text_slice_ids(id, n_slices=10):
+    from .constants import STASH_SLICES_NLP
+    
+    return [
+        f'{id}__{slice_id:02d}'
+        for slice_id in range(1,n_slices+1)
+        if f'{id}__{slice_id:02d}' in STASH_SLICES_NLP
+    ]

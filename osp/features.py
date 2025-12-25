@@ -360,3 +360,13 @@ def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, no
     df_scores_rest = df_scores_all.drop(df_scores_cv.index).assign(_type='Unseen', _group='Unseen')
     df_scores = pd.concat([df_scores_cv, df_scores_rest])
     return df_scores
+
+
+def get_current_feat_weights(comparisons=None):
+    df = pd.read_excel(PATH_FEAT_WEIGHTS)
+    df = df.drop(columns=['Unnamed: 0','run'])
+    if comparisons is not None:
+        df = df.query('comparison in @comparisons')
+    
+    return df.groupby('feature').mean(numeric_only=True)
+    

@@ -53,6 +53,7 @@ PATH_WORDFREQS_TSV = os.path.join(PATH_DATA, "raw", "word_freqs.tsv")
 PATH_WORDFREQS_TSV_NL = 62141323
 PATH_WORDDB = os.path.join(PATH_DATA, "raw", "worddb.byu.txt")
 PATH_TOTAL_TEXT_COUNTS = os.path.join(PATH_DATA, "total_text_counts.json")
+PATH_FEAT_WEIGHTS = os.path.join(PATH_DATA, "feats_perspectival2.xlsx")
 
 # Stashes
 NLP_STASH = HashStash("osp_nlp")

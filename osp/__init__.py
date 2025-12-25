@@ -16,6 +16,8 @@ import re
 import plotnine as p9
 from functools import lru_cache
 import json
+from IPython.display import HTML,display,Markdown
+import html
 
 # Configure cache and plotnine
 cache = lru_cache(maxsize=None)
