@@ -63,6 +63,18 @@ def get_feat_color_by(color='score_z_diff', min_score=None, max_score=None):
     color_by = {k: float(max(min_score, min(max_score, v)) )for k, v in zip(df_feat_weights.index, vals)}
     return color_by
 
+def get_doc_html(doc, color='score_z_diff', max_score=None, min_score=None, word_feat_type='deprel'):
+    """
+    Returns HTML for a stanza Document.
+    """
+    output_html = ['<div style="line-height: 2.8; font-family: sans-serif; padding: 10px;">']
+
+    for sent in doc.sentences:
+        sent_html = get_sent_html(sent, color=color, max_score=max_score, min_score=min_score, word_feat_type=word_feat_type)
+        output_html.append(f'<p>{sent_html}</p>')
+    output_html.append('</div>')
+    return "".join(output_html)
+
 def get_passage_html(slice_id, color='score_z_diff', max_score=None, min_score=None,word_feat_type='deprel'):
     """
     Displays the passage for a given slice_id in HTML.
@@ -73,14 +85,7 @@ def get_passage_html(slice_id, color='score_z_diff', max_score=None, min_score=N
         return   
     docstr = STASH_SLICES_NLP[slice_id]
     doc = stanza.Document.from_serialized(docstr)
-
-    output_html = ['<div style="line-height: 2.8; font-family: sans-serif; padding: 10px;">']
-
-    for sent in doc.sentences:
-        sent_html = get_sent_html(sent, color=color, max_score=max_score, min_score=min_score, word_feat_type=word_feat_type)
-        output_html.append(f'<p>{sent_html}</p>')
-    output_html.append('</div>')
-    return "".join(output_html)
+    return get_doc_html(doc, color=color, max_score=max_score, min_score=min_score, word_feat_type=word_feat_type)
 
 def display_passage(slice_id, **kwargs):
     display(HTML(get_passage_html(slice_id, **kwargs)))

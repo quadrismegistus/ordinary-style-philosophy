@@ -35,4 +35,5 @@ from .slices import *
 from .features import *
 from .statistics import *
 from .classify import *
+from .passages import *
 
