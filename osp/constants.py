@@ -69,6 +69,9 @@ STASH_SLICES = HashStash("osp_slices_1000")
 STASH_SLICES_NLP = HashStash("osp_slices_1000_nlp")
 STASH_SLICE_FEATS = HashStash("osp_slices_1000_feats")
 STASH_COUNTS = HashStash("osp_counts")
+STASH_PREDS_FEATS = HashStash('osp_preds_feats')
+
+NORMALIZE_DATA = False
 
 # Wordsets
 WORDSETS = ["top", "content", "non_content"]
@@ -257,3 +260,24 @@ stashed_result = HashStash("osp_stashed_result").stashed_result
 
 # POS names mapping
 pos_names = {"N": "noun", "V": "verb", "J": "adjective", "R": "adverb"}
+
+
+COMPARISONS = [
+    (
+        ('1925-1950 Philosophy', 'discipline=="Philosophy" & 1925<=year<1950'),
+        ('1925-1950 Literature', 'discipline=="Literature" & 1925<=year<1950'),
+    ),
+    (
+        ('1950-1975 Philosophy', 'discipline=="Philosophy" & 1950<=year<1975'),
+        ('1950-1975 Literature', 'discipline=="Literature" & 1950<=year<1975'),
+    ),
+    (
+        ('1975-2000 Philosophy', 'discipline=="Philosophy" & 1975<=year<2000'),
+        ('1975-2000 Literature', 'discipline=="Literature" & 1975<=year<2000'),
+    ),
+    (
+        ('2000-2025 Philosophy', 'discipline=="Philosophy" & 2000<=year<2025'),
+        ('2000-2025 Literature', 'discipline=="Literature" & 2000<=year<2025'),
+    ),
+]
+GROUPS_TRAIN = COMPARISONS[0]

@@ -172,7 +172,7 @@ def extract_slice_feats(docstr, context_len=None, force=False, return_dict=True)
     if context_len is None:
         context_len = CONTEXT_LEN
     
-    doc = stanza.Document.from_serialized(docstr)
+    doc = stanza.Document.from_serialized(docstr) if isinstance(docstr, str) else docstr
     if doc is None:
         return {}
 
@@ -334,7 +334,7 @@ def get_top_word_egs_str(top_words):
 
 
 
-def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, normalize=True, **kwargs):
+def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, normalize=NORMALIZE_DATA, **kwargs):
     df_meta = get_corpus_metadata()
     name1, query1 = groups_train[0]
     name2, query2 = groups_train[1]
@@ -370,3 +370,29 @@ def get_current_feat_weights(comparisons=None):
     
     return df.groupby('feature').mean(numeric_only=True)
     
+
+
+
+def gen_all_slice_feats(force=False, batch_n=100, num_proc=1):
+    ids = get_parsed_slice_ids()
+    if not force:
+        ids_not_done = [id for id in ids if id not in STASH_SLICE_FEATS]
+        if len(ids_not_done) == 0:
+            return
+        ids = ids_not_done
+    
+    for batch_i in tqdm(list(range(0,len(ids),batch_n)),position=0):
+        batch_ids = ids[batch_i:batch_i+batch_n]
+        batch_docstrs = [STASH_SLICES_NLP[id] for id in batch_ids]
+
+        with mp.Pool(num_proc) as pool:
+            iterr = pool.imap(_do_gen_all_slice_feats, batch_docstrs)
+            for id,res in zip(batch_ids,iterr):
+                STASH_SLICE_FEATS[id] = res
+
+def _do_gen_all_slice_feats(docstr):
+    try:
+        return extract_slice_feats(docstr)
+    except Exception as e:
+        print(f'!! {e}')
+        return None

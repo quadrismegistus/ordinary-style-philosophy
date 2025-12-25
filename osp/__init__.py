@@ -18,6 +18,8 @@ from functools import lru_cache
 import json
 from IPython.display import HTML,display,Markdown
 import html
+import multiprocessing as mp
+
 
 # Configure cache and plotnine
 cache = lru_cache(maxsize=None)
