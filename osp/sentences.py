@@ -328,16 +328,55 @@ def get_doc_annotated_items(doc, **kwargs):
             all_items.append("\n\n")
     return all_items
 
-def display_doc_annotated(doc, **kwargs):
+def display_doc_annotated(doc, key_prefix="doc", **kwargs):
     """
     Helper to display a document using st-annotated-text in Streamlit.
     """
+    import streamlit as st
     try:
         from annotated_text import annotated_text
-        items = get_doc_annotated_items(doc, **kwargs)
-        annotated_text(*items)
     except ImportError:
-        print("st-annotated-text not installed. Please install with 'pip install st-annotated-text'")
+        st.error("st-annotated-text not installed. Please install with 'pip install st-annotated-text'")
+        return
+
+    # Define dialog for displaying sentence diagram
+    if hasattr(st, 'dialog'):
+        @st.dialog("Sentence Structure", width="large")
+        def show_sent_dialog(sent, sent_num):
+            st.caption(f"Sentence {sent_num}: {sent.text}")
+            # Map 'color' arg to 'color_by' for render_sent_displacy
+            render_kwargs = kwargs.copy()
+            if 'color' in render_kwargs and 'color_by' not in render_kwargs:
+                render_kwargs['color_by'] = render_kwargs['color']
+            
+            html = render_sent_displacy(sent, jupyter=False, **render_kwargs)
+            # Use scrolling container for large SVGs
+            st.components.v1.html(html, height=400, scrolling=True)
+    else:
+        def show_sent_dialog(sent, sent_num):
+            with st.expander(f"Sentence {sent_num} Diagram", expanded=True):
+                # Map 'color' arg to 'color_by' for render_sent_displacy
+                render_kwargs = kwargs.copy()
+                if 'color' in render_kwargs and 'color_by' not in render_kwargs:
+                    render_kwargs['color_by'] = render_kwargs['color']
+                
+                html = render_sent_displacy(sent, jupyter=False, **render_kwargs)
+                st.components.v1.html(html, height=400, scrolling=True)
+
+    for i, sent in enumerate(doc.sentences):
+        # Create a layout with a small column for the ID/button and large for text
+        col1, col2 = st.columns([0.8, 12])
+        sent_num = i + 1
+        
+        with col1:
+            # Display ID as a button
+            if st.button(f"{sent_num}", key=f"{key_prefix}_sent_btn_{i}", help="Click to view syntactic diagram"):
+                show_sent_dialog(sent, sent_num)
+        
+        with col2:
+            items = get_sent_html2(sent, **kwargs)
+            annotated_text(*items)
+
 
 def display_sent_annotated(sent, **kwargs):
     """

@@ -202,7 +202,7 @@ def display_slice_analysis(doc, color_column, word_feat_type, view_mode="Annotat
 
     st.markdown("##### Annotated Passage")
     if view_mode == "Annotated":
-        display_doc_annotated(doc, color=color_column, word_feat_type=word_feat_type)
+        display_doc_annotated(doc, color=color_column, word_feat_type=word_feat_type, key_prefix=f"slice_{cache_key or 'main'}")
     else:
         html_output = get_doc_html(doc, color=color_column, word_feat_type=word_feat_type)
         st.markdown(html_output, unsafe_allow_html=True)
