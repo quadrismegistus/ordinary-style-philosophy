@@ -152,38 +152,42 @@ if selection and selection.selection.rows:
         meta_cols_to_show = ['id'] + [c for c in DF_PREDS_METADATA_COLS if c not in selected_by]
         display_cols = meta_cols_to_show + prob_cols
         
+        # Add a column for the link
+        # We need to render this as a clickable link.
+        df_text_slices['Visual Analysis'] = df_text_slices['id'].apply(
+            lambda x: f"/Passages?slice_id={x}"
+        )
+        
+        # Include the link column in the data to be styled
+        display_cols_with_link = ['Visual Analysis'] + display_cols
+        
         # Style and display the slice table
-        styled_text_slices = style_prediction_df(df_text_slices[display_cols])
+        styled_text_slices = style_prediction_df(df_text_slices[display_cols_with_link])
 
         slice_selection = st.dataframe(
             styled_text_slices,
             use_container_width=True,
             hide_index=True,
-            on_select="rerun",
-            selection_mode="single-row",
+            # on_select="rerun", # No longer selecting rows for inline display
+            # selection_mode="single-row",
+            column_config={
+                **col_cfg,
+                "Visual Analysis": st.column_config.LinkColumn(
+                    "Visualize", 
+                    help="Click to open visualization in new tab",
+                    display_text="Open ↗"
+                )
+            }
         )
 
-        # Handle Slice Table Selection for Visual Analysis
-        if slice_selection and slice_selection.selection.rows:
-            selected_slice_idx = slice_selection.selection.rows[0]
-            selected_slice_row = df_text_slices.iloc[selected_slice_idx]
-            selected_slice_id = selected_slice_row['id']
-        else:
-            st.info("Select a slice to view its visual analysis.")
+        # Removed: Handle Slice Table Selection for Visual Analysis
+        # if slice_selection and slice_selection.selection.rows:
+        #     ...
+
 else:
     st.info("Select a group from the left table to view its constituent slices.")
 
 # 3. Visual Analysis (Full Width)
-st.divider()
-if selected_slice_id:
-    st.markdown(f"### Visual Analysis: {selected_slice_id}")
-    
-    with st.spinner(f"Loading slice {selected_slice_id}..."):
-        # Load the serialized doc
-        docstr = STASH_SLICES_NLP[selected_slice_id]
-        doc = stanza.Document.from_serialized(docstr)
-        
-        # Use the shared display component
-        display_slice_analysis(doc, color_column, word_feat_type, view_mode=view_mode, cache_key=selected_slice_id)
-else:
-    st.info("Select a slice in the table above to perform detailed visual analysis.")
+# st.divider()
+# if selected_slice_id:
+#    ...

@@ -6,6 +6,9 @@ from bs4 import BeautifulSoup
 from spacy import displacy
 from IPython.display import HTML, display
 
+COLOR_MIN_SCORE = -2
+COLOR_MAX_SCORE = 2
+
 def get_sent_obj(txt):
     return get_nlp_doc(txt).sentences[0]
 
@@ -32,6 +35,15 @@ def get_clause_tokens(tree):
     """
     clause_num = 0
     clause_type = None
+
+    def is_it_new_clause(t):
+        ttxt = ' '.join(t.leaves())
+        if not ttxt: return False
+        if not any(c.isalpha() for c in ttxt): return False
+        if not t.label() == 'SBAR': return False
+        # if not ((not is_in_sbar(t) and t.label() == 'S') or t.label() == 'SBAR'): return False
+        return True
+
     for t in tree.subtrees():
         ttxt = ' '.join(t.leaves())
         # A clause starts if it's an S or SBAR and has alphabetic content
@@ -87,11 +99,11 @@ def get_clauses(sent):
 
 def get_color(
     feat,
-    color_by='weight',
+    color_by='weight_z',
     df_feats=None,
     vcenter=0.0,
-    vmin=None,
-    vmax=None,
+    vmin=COLOR_MIN_SCORE,
+    vmax=COLOR_MAX_SCORE,
     cmap_name='RdBu'
 ):
     """
@@ -148,7 +160,7 @@ def get_displacy_data(sent):
     
     return {"words": words, "arcs": arcs}
 
-def render_sent_displacy(sent, color_by='weight', df_feats=None, options=None, jupyter=True, **kwargs):
+def render_sent_displacy(sent, color_by='weight_z', df_feats=None, options=None, jupyter=True, **kwargs):
     """
     Render a sentence using displaCy with elements colored by their feature weights.
     """
@@ -253,7 +265,8 @@ def get_sent_html(sent, color='score_z_diff', max_score=None, min_score=None, co
         
         # Escape text for safety and create annotated span
         safe_text = html.escape(word.text)
-        posdeprel = deprel if word_feat_type == 'deprel' else pos
+        # posdeprel = deprel if word_feat_type == 'deprel' else pos
+        posdeprel = f'{pos}/{deprel}' if show_labels else ''
         
         label_style = f"opacity: 0.7;" if show_labels else "display: none;"
         
@@ -269,7 +282,7 @@ def get_sent_html(sent, color='score_z_diff', max_score=None, min_score=None, co
         sent_html.append(word_span)
     return "".join(sent_html)
 
-def get_sent_html2(sent, color='score_z_diff', max_score=None, min_score=None, word_feat_type='deprel', df_feats=None, font_size="1.3rem", show_labels=True):
+def get_sent_html2(sent, color='score_z_diff', max_score=COLOR_MAX_SCORE, min_score=COLOR_MIN_SCORE, word_feat_type='deprel', df_feats=None, font_size="1.3rem", show_labels=True):
     """
     Returns a list of items for use with streamlit's annotated_text.
     """
@@ -349,9 +362,25 @@ def display_doc_annotated(doc, key_prefix="doc", **kwargs):
             if 'color' in render_kwargs and 'color_by' not in render_kwargs:
                 render_kwargs['color_by'] = render_kwargs['color']
             
-            html = render_sent_displacy(sent, jupyter=False, **render_kwargs)
+            html_content = render_sent_displacy(sent, jupyter=False, **render_kwargs)
+            
+            # Inject script to scroll to bottom-left
+            # displaCy puts words at the bottom. We want to see them immediately.
+            html_with_script = f"""
+            <div style="zoom: 0.75;">
+                {html_content}
+            </div>
+            <script>
+                // Scroll to bottom left on load
+                setTimeout(function() {{
+                    window.scrollTo(0, document.body.scrollHeight);
+                }}, 100);
+            </script>
+            """
+            
             # Use scrolling container for large SVGs
-            st.components.v1.html(html, height=400, scrolling=True)
+            # Height 600 fits within most laptop screens without scrolling the main page
+            st.components.v1.html(html_with_script, height=600, scrolling=True)
     else:
         def show_sent_dialog(sent, sent_num):
             with st.expander(f"Sentence {sent_num} Diagram", expanded=True):
@@ -360,10 +389,42 @@ def display_doc_annotated(doc, key_prefix="doc", **kwargs):
                 if 'color' in render_kwargs and 'color_by' not in render_kwargs:
                     render_kwargs['color_by'] = render_kwargs['color']
                 
-                html = render_sent_displacy(sent, jupyter=False, **render_kwargs)
-                st.components.v1.html(html, height=400, scrolling=True)
+                html_content = render_sent_displacy(sent, jupyter=False, **render_kwargs)
+                
+                html_with_script = f"""
+                <div style="zoom: 0.75;">
+                    {html_content}
+                </div>
+                <script>
+                    setTimeout(function() {{
+                        window.scrollTo(0, document.body.scrollHeight);
+                    }}, 100);
+                </script>
+                """
+                st.components.v1.html(html_with_script, height=500, scrolling=True)
 
-    for i, sent in enumerate(doc.sentences):
+    # Sort option for sentences
+    sort_order = st.selectbox(
+        "Sort sentences by:",
+        ["ID (Ascending)", "ID (Descending)", "Length (Ascending)", "Length (Descending)"],
+        key=f"{key_prefix}_sort"
+    )
+    
+    # Prepare list of sentences with indices
+    sent_list = list(enumerate(doc.sentences))
+    
+    if "Length" in sort_order:
+        sent_list.sort(key=lambda x: len(x[1].words), reverse="Descending" in sort_order)
+    elif "Descending" in sort_order:
+        sent_list.reverse()
+        
+    # Header row to mimic table layout
+    col1, col2 = st.columns([0.8, 12])
+    col1.markdown("**ID**")
+    col2.markdown("**Sentence**")
+    st.divider()
+
+    for i, sent in sent_list:
         # Create a layout with a small column for the ID/button and large for text
         col1, col2 = st.columns([0.8, 12])
         sent_num = i + 1
@@ -374,8 +435,19 @@ def display_doc_annotated(doc, key_prefix="doc", **kwargs):
                 show_sent_dialog(sent, sent_num)
         
         with col2:
-            items = get_sent_html2(sent, **kwargs)
-            annotated_text(*items)
+            # Render annotated HTML directly so it shows in the “table” cell
+            sent_html = get_sent_html(
+                sent,
+                color=kwargs.get("color", "score_z_diff"),
+                max_score=kwargs.get("max_score", COLOR_MAX_SCORE),
+                min_score=kwargs.get("min_score", COLOR_MIN_SCORE),
+                word_feat_type=kwargs.get("word_feat_type", "deprel"),
+                df_feats=kwargs.get("df_feats", None),
+                font_size="1.1em",
+                show_labels=True
+            )
+            st.markdown(sent_html, unsafe_allow_html=True)
+
 
 
 def display_sent_annotated(sent, **kwargs):
@@ -388,3 +460,72 @@ def display_sent_annotated(sent, **kwargs):
         annotated_text(*items)
     except ImportError:
         print("st-annotated-text not installed. Please install with 'pip install st-annotated-text'")
+
+def detokenize_sent(sent):
+    l = []
+    for tok in sent.tokens:
+        l.append(tok.text)
+        l.append(tok.spaces_after)
+    return ''.join(l).strip()
+
+def is_valid_sent_feat(k):
+    for bw in ['parens','punct','noun','verb','adjective']:
+        if bw in k:
+            return False
+    return True
+
+def get_sent_feats(sent,per_n_words=None):
+    tree = get_sent_tree(sent)
+    feats = get_tree_stats(tree)
+    feats['sent'] = detokenize_sent(sent)
+    feats = {k:v for k,v in feats.items() if k=='sent' or is_valid_sent_feat(k)}
+    if per_n_words:
+        num_words = get_num_words(tree)
+        feats['num_words'] = num_words
+        for k,v in feats.items():
+            if isinstance(v,(int,float)):
+                feats[k] = v / per_n_words
+    html = get_sent_html(sent, color='weight_z', min_score=-2, max_score=2,show_labels=True, color_by='weight_z')
+    return {'sent_i':sent.index, 'html':html, **feats}
+
+def get_sents_feats(doc,per_n_words=None):
+    return pd.DataFrame(get_sent_feats(sent,per_n_words) for sent in doc.sentences)
+
+def get_sents_feats_df(doc,per_n_words=None, color_by='weight_z', html=False, with_weights=False):
+    df = get_sents_feats(doc,per_n_words)
+    if not html: 
+        df = df.drop(columns=['html'])
+    else:
+        df = df.drop(columns=['sent']).rename(columns={'html':'sent'})
+    if with_weights:
+        df2 = get_sent_weights(doc, color_by=color_by).drop(columns=['sent'])
+        df = df.merge(df2, on='sent_i', how='left')
+        
+    df['sent_num']=df['sent_i']+1
+    df = df.drop(columns=['sent_i'])
+    df.columns=[col.replace('_',' ').title() if not '(' in col and col != 'html' else col for col in df.columns]
+    return df.set_index(['Sent Num'])
+
+def get_sent_weights(doc, color_by='weight_z'):
+    o = []
+    # weights = get_current_feat_weights(group_by=('feature',))
+    weights_cmp = get_current_feat_weights(group_by=('comparison',))[color_by]
+
+    dfx=get_slice_feats_by_word(doc, color_by)
+    dfx_all_s = dfx.groupby(['sent_i']).mean(numeric_only=True).reset_index().set_index('sent_i')[color_by]
+    dfx_feat = dfx.groupby(['sent_i','feat_type']).mean(numeric_only=True).reset_index().set_index('sent_i')
+    dfx_feat_piv = dfx_feat.reset_index().pivot(index='sent_i', columns='feat_type', values='weight_z')
+
+    for sent_i, sent in enumerate(doc.sentences):
+        out_d = {'sent_i':sent_i, 'sent':detokenize_sent(sent)}
+        out_d['P(Phil)'] = dfx_all_s.loc[sent_i]
+        
+        sentrow = dfx_feat_piv.loc[sent_i]
+        for col in sentrow.index:
+            out_d[f'P(Phil|{col})'] = sentrow.loc[col]
+
+        for cmp,score in weights_cmp.items():
+            out_d[f'P(Phil|{cmp.split("-")[0]})'] = score
+        o.append(out_d)
+    return pd.DataFrame(o)
+    

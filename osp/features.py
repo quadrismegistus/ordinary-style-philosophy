@@ -138,7 +138,7 @@ def get_all_feats(normalize=True, feat_types=None, **kwargs):
     return odf[[c for c in odf.columns if c not in BAD_SLICE_FEATS]]
 
 
-@stashed_result
+# @stashed_result
 def get_all_feats_stashed():
     from .constants import STASH_SLICE_FEATS
     
@@ -226,7 +226,7 @@ def extract_slice_feats(docstr, context_len=None, force=False, return_dict=True)
         **orig_d,
         **{f'pos_{k}': (v/sum(pos_d.values()))*1000 for k, v in pos_d.items()},
         **{f'deprel_{k}': (v/sum(deprel_d.values()))*1000 for k, v in deprel_d.items()},
-        'ttr': ttr,
+        'ttr_mean': ttr,
         'ttr_recog': ttr_recog,
         'num_words': num_words,
         'num_recog_words': num_recog_words,
@@ -367,11 +367,12 @@ def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, no
 
 
 @cache
-def get_current_feat_weights(*args, **kwargs):
+def get_current_feat_weights(*args,group_by=('feature',), **kwargs):
     from .classify import get_preds_feats
     df_preds, df_feats, d_models = get_preds_feats(*args, **kwargs)
-    return df_feats.groupby('feature').mean(numeric_only=True)
-    
+    odf = df_feats.groupby(list(group_by)).mean(numeric_only=True)
+    odf['weight_z'] = (odf['weight'] - odf['weight'].mean()) / odf['weight'].std()
+    return odf
 
 
 
@@ -492,3 +493,34 @@ def get_dashboard_df_feats(df_feats=None):
     return odf[[c for c in COLS_FEATS if c in odf.columns]].set_index('feature')
 
     
+def get_slice_feats_by_word(doc, weight_cols = ['weight','score_mean1','score_mean2']):
+    df_feat_weights = get_current_feat_weights()
+    df_slice_feats = extract_slice_feats(doc, return_dict=False)
+
+    o = []
+    df_slice_feats_sent = df_slice_feats.drop_duplicates(subset=['sent_i'])
+    for i,row in df_slice_feats.iterrows():
+        meta_d = {
+            'sent_i':row['sent_i'],
+            'word_i':row['word_i'],
+        }
+        pos = row['pos']
+        deprel = row['deprel']
+        out_d1 = {**meta_d, 'feature':f'pos_{pos}', 'value':1}
+        out_d2 = {**meta_d, 'feature':f'deprel_{deprel}', 'value':1}
+        o.extend([out_d1,out_d2])
+
+    for i,row in df_slice_feats_sent.iterrows():
+        meta_d = {
+            'sent_i':row['sent_i'],
+            'word_i':row['word_i'],
+        }
+        for c in row.index:
+            if c.startswith('sent_') and c.split('_')[-1] not in ['i','id']:
+                out_d = {**meta_d, 'feature':c, 'value':row[c]}
+                o.append(out_d)
+
+    odf_slice_feats = pd.DataFrame(o)
+    odf_slice_feats = odf_slice_feats.merge(df_feat_weights[weight_cols], on='feature', how='left').dropna()
+    odf_slice_feats['feat_type'] = odf_slice_feats.feature.str.split('_').str[0]
+    return odf_slice_feats

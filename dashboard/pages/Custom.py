@@ -137,12 +137,44 @@ if text_input:
         
         st.divider()
         
-        selected_slice_idx = st.selectbox("Select a slice to inspect:", 
-                                         options=range(len(slice_results)),
-                                         format_func=lambda i: f"Slice {i}: {slice_results[i]['text'][:100]}...")
+        # Create a dataframe for slice selection with links
+        df_slices = pd.DataFrame([
+            {
+                'Slice Index': i,
+                'Text Preview': r['text'][:100] + "...",
+                'text_full': r['text'] # Hidden but used for link
+            }
+            for i, r in enumerate(slice_results)
+        ])
         
-        res = slice_results[selected_slice_idx]
-        display_slice_analysis(res['doc'], color_column, word_feat_type, view_mode=view_mode, cache_key=res['text'])
+        # Link to Visualization page with txt param
+        # Note: Sending full text via URL might hit length limits. 
+        # Ideally, we'd cache it and pass an ID, but for now we'll try passing text.
+        # Alternatively, we can just keep the inline visualization for Custom.py since it's transient data.
+        # But the prompt asked for "txt=[raw string to parse in the Custom mode]".
+        
+        import urllib.parse
+        
+        df_slices['Visual Analysis'] = df_slices['text_full'].apply(
+            lambda x: f"/Passages?txt={urllib.parse.quote(x)}"
+        )
+        
+        st.dataframe(
+            df_slices[['Slice Index', 'Text Preview', 'Visual Analysis']],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Visual Analysis": st.column_config.LinkColumn(
+                    "Visualize", 
+                    display_text="Open ↗"
+                )
+            }
+        )
+        
+        # Removed inline selection and display
+        # selected_slice_idx = st.selectbox(...)
+        # res = slice_results[selected_slice_idx]
+        # display_slice_analysis(...)
 
 else:
     with left_col:
