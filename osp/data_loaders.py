@@ -67,7 +67,7 @@ def get_half_century(year):
 
 
 @cache
-def get_corpus_metadata(path=None, periodize_by=20, min_year=None, max_year=None):
+def get_corpus_metadata(path=None, periodize_by=25, min_year=None, max_year=None):
     from .constants import METADATA, PATH_METADATA, MIN_YEAR, MAX_YEAR
     import osp.constants as constants
     

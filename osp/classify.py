@@ -415,12 +415,13 @@ def classify_then_predict_comparisons(
     return (odf_preds, odf_feats) if not return_models else (odf_preds, odf_feats, d_models)
 
 
+@cache
 @STASH_PREDS_FEATS.stashed_result
 def get_preds_feats(
     comparisons=COMPARISONS,
     num_runs=10,
-    sample_size=1000,
-    feat_n=50,
+    sample_size=1_000,
+    feat_n=25,
     feat_n_egs=10,
     verbose=False,
     return_models=True,
@@ -515,3 +516,117 @@ def get_feat_names_from_models(d_models):
     for cmpname, models in d_models.items():
         for mdl in models:
             return mdl.features_
+
+
+
+
+
+def get_pred_label(row):
+    prob_fields = [c for c in row.keys() if c.startswith('prob_')]
+    pred_label = None
+    for c in prob_fields:
+        if row[c] > 0.5:
+            pred_label = c.split('_',1)[-1]
+            break
+    return pred_label
+
+def get_nice_df_preds(df_preds = None, metadata_cols = DF_PREDS_METADATA_COLS, average_by=DF_PREDS_AVERAGE_BY):
+    if df_preds is None:
+        df_preds, df_feats, d_models = get_preds_feats()
+    odf_preds=(
+        df_preds.drop(columns=['run','correct'])
+        .query('predict_type=="unseen"')
+        .groupby(['id','true_label','comparison'])
+        .mean(numeric_only=True)
+    ).reset_index()    
+    odf_preds['text_id'] = [i.split('__')[0] for i in odf_preds.id]
+
+    mdf = get_corpus_metadata().rename_axis('text_id').rename_axis('text_id')
+    odf = odf_preds.merge(mdf,on='text_id',how='left')
+    odf = odf.groupby(['true_label'] +average_by).mean(numeric_only=True).reset_index()
+    odf['prob_Phil-Lit'] = odf['prob_Philosophy'] - odf['prob_Literature']
+    # odf['pred_label'] = odf.apply(get_pred_label, axis=1)
+    # odf['prob_correct'] = (odf.prob_pred == odf.true_label).apply(int)
+
+    def get_accuracy_score(row):
+        return row[f'prob_{row["true_label"]}']
+
+    odf['prob_accuracy'] = odf.apply(get_accuracy_score, axis=1)
+
+    outcols = average_by + [c for c in odf if c.startswith('prob_')]
+    return odf[outcols]
+
+
+@HashStash('osp_df_preds_for_slices').stashed_result
+def get_df_preds_for_slices(df_preds = None):
+    if df_preds is None:
+        df_preds, df_feats, d_models = get_preds_feats()
+    inp_df = df_preds.query('predict_type=="unseen"').groupby(['comparison','id']).mean(numeric_only=True).reset_index()
+    
+    out_ld = []
+    for idx,id_df in tqdm(inp_df.groupby('id'), total=inp_df.id.nunique()):
+        out_d = {'id':idx}
+        vals = []
+        out_d2 = {}
+        for cmp,cmp_df in id_df.groupby('comparison'):
+            cmp_prd = cmp.split(' ')[0].split('-')[0]
+            cmp_key = f'P{cmp_prd}'
+            val = float(cmp_df.prob_Philosophy.mean())
+            vals.append(val)
+            out_d2[cmp_key] = val
+        out_d['P'] = np.mean(vals)
+        out_ld.append({**out_d, **out_d2})
+    out_df = pd.DataFrame(out_ld)
+    # out_df['Phil (2000-2025) - Phil (1925-1950)'] = out_df['Phil (2000-2025)'] - out_df['Phil (1925-1950)']
+    # out_df = out_df.dropna().sort_values('Phil (2000-2025) - Phil (1925-1950)',ascending=False)
+    out_df = out_df.set_index('id')
+    return out_df
+
+def get_nice_df_preds2(df_preds = None, metadata_cols = DF_PREDS_METADATA_COLS, by='text', incl_slice_ids=False):
+    df = get_df_preds_for_slices(df_preds=df_preds)
+    for c in df: 
+        df[c] = pd.to_numeric(df[c], errors='coerce')
+    df = df.reset_index()
+    df['text_id'] = [i.split('__')[0] for i in df.id]
+    mdf = get_corpus_metadata()[metadata_cols]
+    mdf['text_id'] = mdf.index
+    odf = df.merge(mdf,on='text_id',how='left')
+    odf['year'] = odf.year.astype(str)
+
+    groupby_cols = []
+    if by=='text':
+        groupby_cols = ['discipline', 'author', 'title', 'journal', 'year']
+    elif by=='discipline':
+        groupby_cols = ['discipline']
+    elif isinstance(by, str):
+        groupby_cols = ['discipline', by]
+    elif isinstance(by, list):
+        groupby_cols = ['discipline'] + [x for x in by if x!='discipline']
+    
+    
+    if groupby_cols:
+        numbcols = odf.select_dtypes(include='number').columns
+        newld = []
+        for g,gdf in odf.groupby(groupby_cols):
+            newd = dict(gdf.mean(numeric_only=True))
+            metad = dict(zip(groupby_cols, g))
+            metad['n'] = len(gdf)
+            metad['slice_ids'] = '; '.join(gdf.id.astype(str))
+            newld.append({**metad, **newd})
+        odf = pd.DataFrame(newld)
+    
+    if 'year' in odf.columns:
+        odf['year'] = odf.year.astype(int)
+
+    a,b='P1925','P2000'
+    diffcol = f'{b}-{a}'
+    if a in odf.columns and b in odf.columns:
+        odf[diffcol] = odf[b] - odf[a]
+    lower_cols = [c for c in odf if c and c[0]==c[0].lower()]
+    upper_cols = [c for c in odf if c and c[0]==c[0].upper()]
+    odf = odf[lower_cols + upper_cols].fillna(0).round(2)
+    if diffcol in odf.columns:
+        odf = odf.sort_values(diffcol,ascending=True)
+    if not incl_slice_ids and 'slice_ids' in odf.columns:
+        odf = odf.drop(columns=['slice_ids'])
+    return odf.set_index(groupby_cols) if groupby_cols else (odf.set_index('id') if 'id' in odf.columns else odf)

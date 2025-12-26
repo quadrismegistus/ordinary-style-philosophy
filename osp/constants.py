@@ -281,3 +281,8 @@ COMPARISONS = [
     ),
 ]
 GROUPS_TRAIN = COMPARISONS[0]
+
+DF_PREDS_METADATA_COLS = ["discipline", "title","author","journal","year","period"]
+DF_PREDS_AVERAGE_BY = ['text_id'] + DF_PREDS_METADATA_COLS
+
+newtxt = """By a `denoting phrase' I mean a phrase such as any one of the following: a man, some man, any man, every man, all men, the present King of England, the presenting King of France, the center of mass of the solar system at the first instant of the twentieth century, the revolution of the earth round the sun, the revolution of the sun round the earth. Thus a phrase is denoting solely in virtue of its form. We may distinguish three cases: (1) A phrase may be denoting, and yet not denote anything; e.g., `the present King of France'. (2) A phrase may denote one definite object; e.g., `the present King of England' denotes a certain man. (3) A phrase may denote ambiguously; e.g. `a man' denotes not many men, but an ambiguous man. The interpretation of such phrases is a matter of considerably difficulty; indeed, it is very hard to frame any theory not susceptible of formal refutation. All the difficulties with which I am acquainted are met, so far as I can discover, by the theory which I am about to explain."""
