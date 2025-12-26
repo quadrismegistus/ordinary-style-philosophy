@@ -8,3 +8,4 @@ nltk
 svgling
 plotnine
 scikit-learn
+st-annotated-text

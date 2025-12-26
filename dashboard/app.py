@@ -8,23 +8,17 @@ if PATH_HERE not in sys.path: sys.path.append(PATH_HERE)
 import streamlit as st
 from utils import *
 
+about_page = st.Page("pages/About.py", title="About", icon=":material/info:")
+custom_page = st.Page("pages/Custom.py", title="Custom Input", icon=":material/edit_note:")
+features_page = st.Page("pages/Features.py", title="Feature Explorer", icon=":material/local_pizza:")
+predict_page = st.Page("pages/Predictions.py", title="Predictions", icon=":material/psychology_alt:")
+
+pg = st.navigation([about_page, predict_page, features_page, custom_page])
+
 st.set_page_config(page_title="Ordinary Style Philosophy", layout="wide")
+pg.run()
 
-st.title("Ordinary Style Philosophy Dashboard")
 
-st.markdown("""
-### Welcome to the Ordinary Style Philosophy Analysis Dashboard
+# setup_sidebar()
 
-This dashboard provides tools for analyzing the stylistic features of philosophical and literary texts.
-
-#### Available Tools:
-
-1. **[Predict Custom Input](/Predict_Custom_Input)**: Paste your own text to see how it compares to philosophical and literary styles.
-2. **[Corpus Explorer](/Corpus_Explorer)**: Explore and visualize pre-existing slices from the research corpus.
-
----
-""")
-
-setup_sidebar()
-
-st.info("Select a tool from the sidebar to get started.")
+# st.info("Select a tool from the sidebar to get started.")

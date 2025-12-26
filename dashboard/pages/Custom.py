@@ -15,10 +15,10 @@ st.set_page_config(page_title="Predict Custom Input", layout="wide")
 
 st.title("Predict Custom Input")
 
-word_feat_type, color_column = setup_sidebar()
+word_feat_type, color_column, view_mode = setup_sidebar()
 
 @st.cache_data
-def process_all_slices(text):
+def process_all_slices(text, color_column, word_feat_type):
     """Processes all slices and returns a list of (preds, feats, html) per slice."""
     slices = split_into_slices(text, slice_len=DEFAULT_SLICE_LEN)
     results = []
@@ -35,7 +35,8 @@ def process_all_slices(text):
             'preds': df_preds,
             'feats_display': df_feats_display,
             'feats_grouped': df_feats_grouped,
-            'html': html_output
+            'html': html_output,
+            'doc': doc # Store doc for streamlit annotation if needed
         })
         my_bar.progress((i + 1) / len(slices), text=f"Analyzed {i+1}/{len(slices)} slices")
     my_bar.empty()
@@ -49,7 +50,7 @@ with left_col:
 
 if text_input:
     with st.spinner("Analyzing all slices..."):
-        slice_results = process_all_slices(text_input)
+        slice_results = process_all_slices(text_input, color_column, word_feat_type)
     
     # Global aggregates for the top level
     all_preds = pd.concat([r['preds'].assign(slice=r['index']) for r in slice_results])
@@ -84,9 +85,13 @@ if text_input:
             st.metric("Total Recognized Words", total_words)
             st.info(f"The text has been analyzed in {len(slice_results)} slices of ~{DEFAULT_SLICE_LEN} words each.")
             
-            full_html = "".join([r['html'] for r in slice_results])
             st.markdown("### Annotated Passage")
-            st.markdown(full_html, unsafe_allow_html=True)
+            if view_mode == "Annotated":
+                for r in slice_results:
+                    display_doc_annotated(r['doc'], color=color_column, word_feat_type=word_feat_type)
+            else:
+                full_html = "".join([r['html'] for r in slice_results])
+                st.markdown(full_html, unsafe_allow_html=True)
             
             # Add download button for results
             all_feats_display = pd.concat([r['feats_display'].assign(slice=r['index']) for r in slice_results])
@@ -137,8 +142,7 @@ if text_input:
                                          format_func=lambda i: f"Slice {i}: {slice_results[i]['text'][:100]}...")
         
         res = slice_results[selected_slice_idx]
-        doc = get_nlp_doc(res['text'])
-        display_slice_analysis(doc, color_column, word_feat_type, cache_key=res['text'])
+        display_slice_analysis(res['doc'], color_column, word_feat_type, view_mode=view_mode, cache_key=res['text'])
 
 else:
     with left_col:

@@ -49,7 +49,7 @@ def is_in_sbar(tree):
 def get_num_independent_clauses(tree):
     return len([t for t in tree.subtrees(lambda t: t.label() == 'S' and not is_in_sbar(t))])
 
-def tokenize_clauses(tree): # -> return both whether "IC" or "DC"
+def tokenize_clauses_simple(tree): # -> return both whether "IC" or "DC"
     return [
         (t.leaves(), "IC" if t.label() == 'S' and not is_in_sbar(t) else "DC") 
         for t in tree.subtrees(lambda t: t.label() == 'S')

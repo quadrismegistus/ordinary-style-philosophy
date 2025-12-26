@@ -114,15 +114,20 @@ def get_slice_feat_counts(id, bad_feats=None):
     return out_d
 
 
-@cache
-def get_all_feats(normalize=True, **kwargs):
+# @cache
+def get_all_feats(normalize=True, feat_types=None, **kwargs):
     odf = get_all_feats_stashed()
+    
+    if feat_types:
+        bad_cols = [c for c in odf.columns if not c or c[0]=='_' or c.split('_')[0] not in feat_types]
+        odf = odf.drop(columns=bad_cols)
+    
     for c in odf.columns:
         odf[c] = pd.to_numeric(odf[c], errors='coerce').fillna(0)
     odf = odf.fillna(0)
 
-    # replace less-than-0 values with 0
-    odf = odf.applymap(lambda x: 0 if x < 0 else x)
+    # # replace less-than-0 values with 0
+    # odf = odf.applymap(lambda x: 0 if x < 0 else x)
 
     if normalize:
         for c in odf.columns:
@@ -151,8 +156,8 @@ def get_all_feats_stashed():
     return df_all_feats
     
 
-def get_feat_counts(ids, normalize=True, renormalize=False, **kwargs):
-    df_all_feats = get_all_feats(normalize=normalize)
+def get_feat_counts(ids, normalize=True, renormalize=False, feat_types=CV_FEAT_TYPES, **kwargs):
+    df_all_feats = get_all_feats(normalize=normalize, feat_types=feat_types)
     idset = set(ids)
     slice_ids = [id for id in df_all_feats.index if id.split('__', 1)[0] in idset]
     df_slice_feats = df_all_feats.loc[slice_ids]
@@ -333,8 +338,7 @@ def get_top_word_egs_str(top_words):
     return ', '.join(f'{w[0]} ({w[1]})' if isinstance(w, tuple) else str(w) for w in top_words)
 
 
-
-def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, normalize=NORMALIZE_DATA, **kwargs):
+def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, normalize=NORMALIZE_DATA, feat_types=CV_FEAT_TYPES, **kwargs):
     df_meta = get_corpus_metadata()
     name1, query1 = groups_train[0]
     name2, query2 = groups_train[1]
@@ -343,12 +347,12 @@ def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, no
     df_meta2 = df_meta.query(query2)
 
     
-    df_scores_all = get_all_feats(normalize=normalize, **kwargs).fillna(0)
-    df_scores1 = get_feat_counts(df_meta1.index.tolist(), normalize=normalize, renormalize=False, **kwargs)
-    df_scores2 = get_feat_counts(df_meta2.index.tolist(), normalize=normalize, renormalize=False, **kwargs)
+    df_scores_all = get_all_feats(normalize=normalize, feat_types=feat_types, **kwargs).fillna(0)
+    df_scores1 = get_feat_counts(df_meta1.index.tolist(), normalize=normalize, renormalize=False, feat_types=feat_types, **kwargs)
+    df_scores2 = get_feat_counts(df_meta2.index.tolist(), normalize=normalize, renormalize=False, feat_types=feat_types, **kwargs)
 
     for dfx in [df_scores_all, df_scores1, df_scores2]:
-        dfx['_target'] = [get_text_metadata(i).get(target_col) for i in dfx.index]
+        dfx['_target'] = [get_text_metadata(i).get(target_col,'') for i in dfx.index]
         dfx.dropna(subset=['_target'], inplace=True)
     
     if balance:
@@ -362,13 +366,11 @@ def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, no
     return df_scores
 
 
-def get_current_feat_weights(comparisons=None):
-    df = pd.read_excel(PATH_FEAT_WEIGHTS)
-    df = df.drop(columns=['Unnamed: 0','run'])
-    if comparisons is not None:
-        df = df.query('comparison in @comparisons')
-    
-    return df.groupby('feature').mean(numeric_only=True)
+@cache
+def get_current_feat_weights(*args, **kwargs):
+    from .classify import get_preds_feats
+    df_preds, df_feats, d_models = get_preds_feats(*args, **kwargs)
+    return df_feats.groupby('feature').mean(numeric_only=True)
     
 
 
@@ -396,3 +398,97 @@ def _do_gen_all_slice_feats(docstr):
     except Exception as e:
         print(f'!! {e}')
         return None
+
+def get_nice_df_feats(df_feats=None):
+    if df_feats is None:
+        df_preds, df_feats, d_models = get_preds_feats()
+
+    out_ld = []
+    for feat,featdf in df_feats.groupby('feature'):
+        out_d = {'feature':feat}
+        vals_P = []
+        vals_L = []
+        out_d2 = {}
+        for cmp,cmp_df in featdf.groupby('comparison'):
+            cmp_prd = cmp.split(' ')[0].split('-')[0]
+            cmp_key_P = f'P{cmp_prd}'
+            val_P = float(cmp_df.score_mean1.mean())
+            vals_P.append(val_P)
+            out_d2[cmp_key_P] = val_P
+            
+            cmp_key_L = f'L{cmp_prd}'
+            val_L = float(cmp_df.score_mean2.mean())
+            vals_L.append(val_L)
+            # out_d2[cmp_key_L] = val_L
+        out_d2['P2000/P1925'] = np.log(out_d2['P2000']/out_d2['P1925']) if out_d2['P1925'] else np.nan
+        out_d['P'] = np.mean(vals_P)
+        out_d['L'] = np.mean(vals_L)
+        out_d['P/L'] = np.log(out_d['P'] / out_d['L'])
+        out_ld.append({**out_d, **out_d2})
+    
+    odf = pd.DataFrame(out_ld)
+    odf = odf.round(2).sort_values('P/L',ascending=False).dropna()
+    return odf
+
+def get_dashboard_df_feats(df_feats=None):
+    from .classify import get_preds_feats
+    if df_feats is None:
+        df_preds, df_feats, d_models = get_preds_feats()
+
+    period2cmp = {x.split('-')[0]:x for x in df_feats.comparison.unique()}
+    
+
+    out_ld = []
+    for feat,featdf in df_feats.round(3).groupby('feature'):
+        out_d = {'feature':feat}
+        vals = defaultdict(list)
+        vals2 = defaultdict(list)
+
+        first_period = None
+        first_P = None
+        first_L = None
+        first_W = None
+        for period,cmpname in sorted(period2cmp.items()):
+            cmp_df = featdf.query('comparison==@cmpname')
+            vals['W'].append(w:=float(cmp_df.weight.mean()))
+            vals['P'].append(p:=float(cmp_df.score_mean1.mean()))
+            vals['L'].append(l:=float(cmp_df.score_mean2.mean()))
+            vals['P/L'].append(np.log(p / l) if l else np.nan)
+
+            if first_period is None:
+                first_period = period
+                first_P = p
+                first_L = l
+                first_W = w
+                vals2[f'P/P{first_period}'].append(0)
+                vals2[f'L/L{first_period}'].append(0)
+                vals2[f'W/W{first_period}'].append(0)
+            else:
+                vals2[f'P/P{first_period}'].append(np.log(p / first_P) if first_P else np.nan)
+                vals2[f'L/L{first_period}'].append(np.log(l / first_L) if first_L else np.nan)
+                vals2[f'W/W{first_period}'].append(w / first_W if first_W else np.nan)
+
+        out_d2 = {}
+        for feat,feat_vals in vals.items():
+            for prd,feat_val in zip(sorted(period2cmp.keys()),feat_vals):
+                out_d2[f'{feat}{prd}' if not '/' in feat else feat.replace('/',f'{prd}/')+prd] = feat_val
+        for feat,feat_vals in vals2.items():
+            for prd,feat_val in zip(sorted(period2cmp.keys()),feat_vals):
+                key=feat.replace('/',f'{prd}/')
+                key_l = key.split('/',1)
+                if len(key_l)==2 and key_l[0]==key_l[1]:
+                    continue
+                out_d2[key] = feat_val
+        
+        out_vals = {f'vals_{k}': v for k,v in vals.items()}
+        out_vals2 = {f'vals_{k}': v for k,v in vals2.items()}
+        out_d2 = {k:float(v) for k,v in out_d2.items()}
+        out_out = {**out_d, **out_d2, **out_vals, **out_vals2}
+        out_ld.append(out_out)
+    
+    odf = pd.DataFrame(out_ld)
+    odf['feat_desc'] = [FEAT2DESC.get(feat, '') for feat in odf.feature]
+    odf = odf.round(3)#.sort_values('P/L',ascending=False).dropna()
+    return odf[[c for c in COLS_FEATS if c in odf.columns]].set_index('feature')
+
+    

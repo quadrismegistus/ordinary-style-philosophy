@@ -1,4 +1,5 @@
 # Core imports
+import json
 import random
 import numpy as np
 from collections import Counter
@@ -38,4 +39,5 @@ from .features import *
 from .statistics import *
 from .classify import *
 from .passages import *
+from .sentences import *
 

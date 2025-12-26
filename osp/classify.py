@@ -415,7 +415,7 @@ def classify_then_predict_comparisons(
     return (odf_preds, odf_feats) if not return_models else (odf_preds, odf_feats, d_models)
 
 
-@cache
+# @cache
 @STASH_PREDS_FEATS.stashed_result
 def get_preds_feats(
     comparisons=COMPARISONS,
@@ -582,7 +582,7 @@ def get_df_preds_for_slices(df_preds = None):
     out_df = out_df.set_index('id')
     return out_df
 
-def get_nice_df_preds2(df_preds = None, metadata_cols = DF_PREDS_METADATA_COLS, by='text', incl_slice_ids=False):
+def get_nice_df_preds2(df_preds = None, metadata_cols = DF_PREDS_METADATA_COLS, by='text', incl_slice_ids=False, sort_by='n'):
     df = get_df_preds_for_slices(df_preds=df_preds)
     for c in df: 
         df[c] = pd.to_numeric(df[c], errors='coerce')
@@ -618,15 +618,29 @@ def get_nice_df_preds2(df_preds = None, metadata_cols = DF_PREDS_METADATA_COLS, 
     if 'year' in odf.columns:
         odf['year'] = odf.year.astype(int)
 
-    a,b='P1925','P2000'
+    a,b='P1900','P2000'
     diffcol = f'{b}-{a}'
     if a in odf.columns and b in odf.columns:
         odf[diffcol] = odf[b] - odf[a]
     lower_cols = [c for c in odf if c and c[0]==c[0].lower()]
     upper_cols = [c for c in odf if c and c[0]==c[0].upper()]
-    odf = odf[lower_cols + upper_cols].fillna(0).round(2)
-    if diffcol in odf.columns:
-        odf = odf.sort_values(diffcol,ascending=True)
+    odf = odf[lower_cols + upper_cols].fillna(0)
+
+    if sort_by in odf.columns:
+        odf = odf.sort_values(sort_by,ascending=False)
     if not incl_slice_ids and 'slice_ids' in odf.columns:
         odf = odf.drop(columns=['slice_ids'])
-    return odf.set_index(groupby_cols) if groupby_cols else (odf.set_index('id') if 'id' in odf.columns else odf)
+    odf = odf.set_index(groupby_cols) if groupby_cols else (odf.set_index('id') if 'id' in odf.columns else odf)
+    odf = odf.rename(
+        columns={
+            'P': 'P(Phil)',
+            'P1900': 'P(Phil|1900)',
+            'P1925': 'P(Phil|1925)',
+            'P1950': 'P(Phil|1950)',
+            'P1975': 'P(Phil|1975)',
+            'P2000': 'P(Phil|2000)',
+            # 'P2000/P1900': 'ΔP(Phil|1900→2000)',
+            'P2000-P1900': 'ΔP(Phil|1900→2000)',
+        }
+    )
+    return odf

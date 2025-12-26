@@ -7,8 +7,7 @@ TOTAL_JSTOR_DATA = 32783
 SLICE_LEN = 1000
 FEAT_N = 100
 FEAT_MIN_COUNT = 0
-MIN_YEAR = 1925
-MAX_YEAR = 2025
+
 CONTEXT_LEN = 15
 CLASSIFY_BY_FEAT_SAMPLE_SIZE = 10_000
 
@@ -264,6 +263,10 @@ pos_names = {"N": "noun", "V": "verb", "J": "adjective", "R": "adverb"}
 
 COMPARISONS = [
     (
+        ('1900-1925 Philosophy', 'discipline=="Philosophy" & 1900<=year<1925'),
+        ('1900-1925 Literature', 'discipline=="Literature" & 1900<=year<1925'),
+    ),
+    (
         ('1925-1950 Philosophy', 'discipline=="Philosophy" & 1925<=year<1950'),
         ('1925-1950 Literature', 'discipline=="Literature" & 1925<=year<1950'),
     ),
@@ -286,3 +289,101 @@ DF_PREDS_METADATA_COLS = ["discipline", "title","author","journal","year","perio
 DF_PREDS_AVERAGE_BY = ['text_id'] + DF_PREDS_METADATA_COLS
 
 newtxt = """By a `denoting phrase' I mean a phrase such as any one of the following: a man, some man, any man, every man, all men, the present King of England, the presenting King of France, the center of mass of the solar system at the first instant of the twentieth century, the revolution of the earth round the sun, the revolution of the sun round the earth. Thus a phrase is denoting solely in virtue of its form. We may distinguish three cases: (1) A phrase may be denoting, and yet not denote anything; e.g., `the present King of France'. (2) A phrase may denote one definite object; e.g., `the present King of England' denotes a certain man. (3) A phrase may denote ambiguously; e.g. `a man' denotes not many men, but an ambiguous man. The interpretation of such phrases is a matter of considerably difficulty; indeed, it is very hard to frame any theory not susceptible of formal refutation. All the difficulties with which I am acquainted are met, so far as I can discover, by the theory which I am about to explain."""
+
+
+
+
+
+COLS_FEATS = [
+    'feature',
+    'feat_desc',
+
+    'W1925',
+    'W1950',
+    'W1975',
+    'W2000',
+    'vals_W',
+
+    'P1925',
+    'P1950',
+    'P1975',
+    'P2000',
+    'vals_P',
+    
+    'L1925',
+    'L1950',
+    'L1975',
+    'L2000',
+    'vals_L',
+
+    'P1925/L1925',
+    'P1950/L1950',
+    'P1975/L1975',
+    'P2000/L2000',
+    'vals_P/L',
+    
+    'P1950/P1925',
+    'P1975/P1925',
+    'P2000/P1925',
+    'vals_P/P1925',
+
+    'L1950/L1925',
+    'L1975/L1925',
+    'L2000/L1925',
+    'vals_L/L1925',
+
+    'W1950/W1925',
+    'W1975/W1925',
+    'W2000/W1925',
+    'vals_W/W1925'
+]
+
+COLS_FEAT_DESCS = {
+    'feature': 'Feature',
+    'feat_desc': 'Feature description',
+
+    'W1925': 'Weight in logistic model trained on 1925-1950',
+    'W1950': 'Weight in logistic model trained on 1950-1975',
+    'W1975': 'Weight in logistic model trained on 1975-2000',
+    'W2000': 'Weight in logistic model trained on 2000-2025',
+    'vals_W': 'Weight in logistic model trained on 1925-2025',
+
+    'P1925': 'Frequency in philosophy corpus in 1925-1950',
+    'P1950': 'Frequency in philosophy corpus in 1950-1975',
+    'P1975': 'Frequency in philosophy corpus in 1975-2000',
+    'P2000': 'Frequency in philosophy corpus in 2000-2025',
+    'vals_P': 'Frequency in philosophy corpus in 1925-2025',
+    
+    'L1925': 'Frequency in literature corpus in 1925-1950',
+    'L1950': 'Frequency in literature corpus in 1950-1975',
+    'L1975': 'Frequency in literature corpus in 1975-2000',
+    'L2000': 'Frequency in literature corpus in 2000-2025',
+    'vals_L': 'Frequency in literature corpus in 1925-2025',
+
+    'P1925/L1925': 'Ratio (log) of frequency in philosophy corpus in 1925-1950 to frequency in literature corpus in 1925-1950',
+    'P1950/L1950': 'Ratio (log) of frequency in philosophy corpus in 1950-1975 to frequency in literature corpus in 1950-1975',
+    'P1975/L1975': 'Ratio (log) of frequency in philosophy corpus in 1975-2000 to frequency in literature corpus in 1975-2000',
+    'P2000/L2000': 'Ratio (log) of frequency in philosophy corpus in 2000-2025 to frequency in literature corpus in 2000-2025',
+    'vals_P/L': 'Ratio (log) of frequency in philosophy corpus in 1925-2025 to frequency in literature corpus in 1925-2025',
+    
+    'P1950/P1925': 'Ratio (log) of frequency in philosophy corpus in 1950-1975 to frequency in philosophy corpus in 1925-1950',
+    'P1975/P1925': 'Ratio (log) of frequency in philosophy corpus in 1975-2000 to frequency in philosophy corpus in 1925-1950',
+    'P2000/P1925': 'Ratio (log) of frequency in philosophy corpus in 2000-2025 to frequency in philosophy corpus in 1925-1950',
+    'vals_P/P1925': 'Ratio (log) of frequency in philosophy corpus in 1925-2025 to frequency in philosophy corpus in 1925-1950',
+
+    'L1950/L1925': 'Ratio (log) of frequency in literature corpus in 1950-1975 to frequency in literature corpus in 1925-1950',
+    'L1975/L1925': 'Ratio (log) of frequency in literature corpus in 1975-2000 to frequency in literature corpus in 1925-1950',
+    'L2000/L1925': 'Ratio (log) of frequency in literature corpus in 2000-2025 to frequency in literature corpus in 1925-1950',
+    'vals_L/L1925': 'Ratio (log) of frequency in literature corpus in 1925-2025 to frequency in literature corpus in 1925-1950',
+
+    'W1950/W1925': 'Ratio of weight in logistic model trained on 1950-1975 to weight in logistic model trained on 1925-1950',
+    'W1975/W1925': 'Ratio of weight in logistic model trained on 1975-2000 to weight in logistic model trained on 1925-1950',
+    'W2000/W1925': 'Ratio of weight in logistic model trained on 2000-2025 to weight in logistic model trained on 1925-1950',
+    'vals_W/W1925': 'Ratio of weight in logistic model trained on 1925-2025 to weight in logistic model trained on 1925-1950',
+}
+
+
+CORPUS_MIN_YEAR = 1900
+CORPUS_MAX_YEAR = 2025
+CORPUS_PERIODIZE_BY = 25
+CV_FEAT_TYPES = ['deprel','pos','sent']

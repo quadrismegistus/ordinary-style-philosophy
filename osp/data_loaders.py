@@ -67,19 +67,21 @@ def get_half_century(year):
 
 
 @cache
-def get_corpus_metadata(path=None, periodize_by=25, min_year=None, max_year=None):
-    from .constants import METADATA, PATH_METADATA, MIN_YEAR, MAX_YEAR
-    import osp.constants as constants
+def get_corpus_metadata(path=None, periodize_by=None, min_year=None, max_year=None):
+    # from .constants import METADATA, PATH_METADATA, CORPUS_MIN_YEAR, CORPUS_MAX_YEAR, CORPUS_PERIODIZE_BY
+    # import osp.constants as constants
     
     if path is None:
         path = PATH_METADATA
     if min_year is None:
-        min_year = MIN_YEAR
+        min_year = CORPUS_MIN_YEAR
     if max_year is None:
-        max_year = MAX_YEAR
+        max_year = CORPUS_MAX_YEAR
+    if periodize_by is None:
+        periodize_by = CORPUS_PERIODIZE_BY
     
-    if constants.METADATA is not None:
-        return constants.METADATA
+    # if constants.METADATA is not None:
+        # return constants.METADATA
     df = pd.read_csv(path).set_index('id')
     df = df.query('year>=@min_year and year<@max_year')
     df['decade'] = df['year'] // 10 * 10
@@ -93,7 +95,7 @@ def get_corpus_metadata(path=None, periodize_by=25, min_year=None, max_year=None
     df['century_journal'] = df['century'] + ' ' + df['journal']
     df['journal_orig'] = df['journal']
     df['journal'] = df['journal'].fillna('').apply(rename_journal)
-    constants.METADATA = df
+    # constants.METADATA = df
     return df
 
 

@@ -11,14 +11,15 @@ import pandas as pd
 import numpy as np
 import altair as alt
 import stanza
+from osp import *
 from utils import *
 
-st.set_page_config(page_title="Corpus Explorer", layout="wide")
+st.set_page_config(page_title="Predictions", layout="wide")
 
-st.title("Corpus Explorer")
+st.title("Predictions")
 
 # Sidebar for global settings
-word_feat_type, color_column = setup_sidebar()
+word_feat_type, color_column, view_mode = setup_sidebar()
 
 with st.sidebar:
     pass
@@ -79,23 +80,33 @@ def style_prediction_df(df):
         return df
     
     # Identify quantitative columns: those starting with 'P' or 'n'
-    quant_cols = [c for c in df.columns if c.startswith("P")]
+    quant_cols = [c for c in df.columns if "P(" in c]
     
     styler = df.style
     for col in quant_cols:
-        if col.startswith("P"):
-            # Probabilities/Diffs: use fixed range if possible for consistency
-            vmin = -1.0 if '-' in col else 0.0
-            vmax = 1.0
-            styler = styler.background_gradient(cmap='RdBu', subset=[col], vmin=vmin, vmax=vmax)
-        else:
+        # if col.startswith("P"):
+        #     # Probabilities/Diffs: use fixed range if possible for consistency
+        #     vmin = -1.0 if '-' in col else 0.0
+        #     vmax = 1.0
+        #     styler = styler.background_gradient(cmap='RdBu', subset=[col], vmin=vmin, vmax=vmax)
+        # else:
             # Other quantitative columns (like 'n'): use column min/max
-            styler = styler.background_gradient(cmap='RdBu', subset=[col])
+        styler = styler.background_gradient(cmap='RdBu', subset=[col])
     
     # Format probabilities to 2 decimal places
-    prob_cols = [c for c in df.columns if c.startswith("P")]
-    if prob_cols:
-        styler = styler.format({c: "{:.2f}" for c in prob_cols})
+    # prob_cols = [c for c in df.columns if c.startswith("P")]
+    if quant_cols:
+        styler = styler.format({c: "{:.3f}" for c in quant_cols})
+
+    # Color-code discipline column
+    if 'discipline' in df.columns:
+        def color_discipline(val):
+            if val == 'Literature':
+                return 'background-color: #b2182b; color: white;'  # Red (from RdBu colormap)
+            elif val == 'Philosophy':
+                return 'background-color: #2166ac; color: white;'  # Blue (from RdBu colormap)
+            return ''
+        styler = styler.applymap(color_discipline, subset=['discipline'])
         
     return styler
 
@@ -173,6 +184,6 @@ if selected_slice_id:
         doc = stanza.Document.from_serialized(docstr)
         
         # Use the shared display component
-        display_slice_analysis(doc, color_column, word_feat_type, cache_key=selected_slice_id)
+        display_slice_analysis(doc, color_column, word_feat_type, view_mode=view_mode, cache_key=selected_slice_id)
 else:
     st.info("Select a slice in the table above to perform detailed visual analysis.")

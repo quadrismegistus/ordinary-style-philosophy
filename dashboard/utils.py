@@ -184,35 +184,35 @@ def plot_predictive_features(df_new_feats):
 
         st.altair_chart(layered, use_container_width=True)
 
-def display_slice_analysis(doc, color_column, word_feat_type, cache_key=None):
+def display_slice_analysis(doc, color_column, word_feat_type, view_mode="Annotated", cache_key=None):
     """Reusable component for displaying prediction chart, annotated passage, and feature plot for a slice."""
     df_slice_preds, df_slice_feats_display, df_slice_feats_grouped = load_new_preds_feats(doc, cache_key=cache_key)
     
-    t_col1, t_col2 = st.columns([1, 1])
+    st.markdown("##### Predictions for Slice")
+    df_plot_preds = df_slice_preds.reset_index().melt(id_vars='comparison', var_name='Class', value_name='Probability')
+    df_plot_preds['Probability'] = df_plot_preds['Probability'].astype(float)
     
-    with t_col1:
-        st.markdown("##### Predictions for Slice")
-        df_plot_preds = df_slice_preds.reset_index().melt(id_vars='comparison', var_name='Class', value_name='Probability')
-        df_plot_preds['Probability'] = df_plot_preds['Probability'].astype(float)
-        
-        pred_chart = alt.Chart(df_plot_preds).mark_bar().encode(
-            x=alt.X('Probability:Q', scale=alt.Scale(domain=[0, 1])),
-            y=alt.Y('comparison:N', title='Comparison'),
-            color='Class:N',
-            tooltip=['comparison', 'Class', alt.Tooltip('Probability', format='.2%')]
-        ).properties(height=150)
-        st.altair_chart(pred_chart, use_container_width=True)
+    pred_chart = alt.Chart(df_plot_preds).mark_bar().encode(
+        x=alt.X('Probability:Q', scale=alt.Scale(domain=[0, 1])),
+        y=alt.Y('comparison:N', title='Comparison'),
+        color='Class:N',
+        tooltip=['comparison', 'Class', alt.Tooltip('Probability', format='.2%')]
+    ).properties(height=150)
+    st.altair_chart(pred_chart, use_container_width=True)
 
-        st.markdown("##### Annotated Passage")
+    st.markdown("##### Annotated Passage")
+    if view_mode == "Annotated":
+        display_doc_annotated(doc, color=color_column, word_feat_type=word_feat_type)
+    else:
         html_output = get_doc_html(doc, color=color_column, word_feat_type=word_feat_type)
         st.markdown(html_output, unsafe_allow_html=True)
         
-    with t_col2:
-        st.markdown("##### Predictive Features (Log-Odds vs. Training)")
-        plot_predictive_features(df_slice_feats_grouped)
+    # with t_col2:
+    #     st.markdown("##### Predictive Features (Log-Odds vs. Training)")
+    #     plot_predictive_features(df_slice_feats_grouped)
         
-        st.markdown("##### Feature Table")
-        st.dataframe(df_slice_feats_display, hide_index=True)
+    #     st.markdown("##### Feature Table")
+    #     st.dataframe(df_slice_feats_display, hide_index=True)
 
 def setup_sidebar():
     # Get feature weights to populate options
@@ -225,6 +225,7 @@ def setup_sidebar():
 
     with st.sidebar:
         st.header("Settings")
+        view_mode = st.radio("View mode:", options=["Classic", "Annotated"], index=1, horizontal=True)
         word_feat_type = st.selectbox("Color words by:", options=['deprel', 'pos'], index=0)
         
         # Determine default weight column
@@ -236,7 +237,7 @@ def setup_sidebar():
         st.divider()
         st.info("Blue: Positive weight | Orange: Negative weight")
         
-    return word_feat_type, color_column
+    return word_feat_type, color_column, view_mode
 
 
 
