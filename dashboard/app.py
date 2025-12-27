@@ -11,19 +11,21 @@ from utils import *
 about_page = st.Page("pages/About.py", title="About", icon=":material/info:")
 custom_page = st.Page("pages/Custom.py", title="Custom Input", icon=":material/edit_note:")
 features_page = st.Page("pages/Features.py", title="Feature Explorer", icon=":material/local_pizza:")
+feature_comp_page = st.Page("pages/FeatureComparison.py", title="Feature Comparison", icon=":material/compare:")
 predict_page = st.Page("pages/Predictions.py", title="Predictions", icon=":material/psychology_alt:")
 passages_page = st.Page("pages/Passages.py", title="Passages", icon=":material/visibility:")
-sample_page = st.Page("pages/Classification.py", title="Classification", icon=":material/model_training:")
+sample_page = st.Page("pages/Sampling.py", title="Samples", icon=":material/model_training:")
 
 pages = {
     "Info": [
         about_page,
     ],
     "Corpus": [
-        classification_page,
+        sample_page,
     ],
     "Features": [
         features_page,
+        feature_comp_page,
     ],
     "Predictions": [
         predict_page,

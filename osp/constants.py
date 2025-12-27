@@ -24,6 +24,8 @@ BAD_SLICE_FEATS = [
     "deprel_list",
     "pos_LS",
     "pos_ADD",
+    # "pos_CC",
+    "deprel_cc",
     "num_words",
     "num_recog_words",
     "deprel_obl:tmod",
@@ -172,7 +174,7 @@ POS2DESC = {
     "-LSB-": "Left square bracket",
     "NFP": "Superfluous punctuation",
     "HYPH": "Hyphen",
-    "GW": "'Goes With' or error marker",
+    "GW": "'Goes with' or error marker",
     "AFX": "Detached prefix or suffix",
 }
 
@@ -246,16 +248,66 @@ DEP2DESC = {
     "xcomp": "Open clausal complement",
     "det:predet": "Predeterminer",
     "nmod:unmarked": "Unmarked nominal modifier",
-    "obl:unmarked": "Unmarked Oblique Nominal",
+    "obl:unmarked": "Unmarked oblique nominal",
 }
 
-SENTFEAT2DESC={
+SENTFEAT2DESC = {
     'num_words': 'Number of words in sentence',
     'num_words_in_independent_clauses': 'Number of words in independent clauses',
     'num_words_in_dependent_clauses': 'Number of words in dependent clauses',
     'height': 'Height of sentence syntax trees',
     'num_independent_clauses': 'Number of independent clauses',
     'num_dependent_clauses': 'Number of dependent clauses',
+    'Cd': 'Maximum clause depth',
+    'DC': 'Number of words in dependent clauses',
+    'IC': 'Number of words in independent clauses',
+    'Wd': 'Maximum word depth',
+}
+
+PHRASEFEAT2DESC = {
+    '$': 'Dollar sign',
+    "''": 'Closing quotation mark',
+    ',': 'Comma',
+    '.': 'Period',
+    ':': 'Colon or ellipsis',
+    'ADD': 'Address',
+    'ADJP': 'Adjective phrase',
+    'ADVP': 'Adverb phrase',
+    'CONJP': 'Conjunction phrase',
+    'FRAG': 'Fragment',
+    'INTJ': 'Interjection',
+    'LST': 'List marker',
+    'NAC': 'Not a constituent',
+    'NML': 'Nominal modifier',
+    'NP': 'Noun phrase',
+    'PP': 'Prepositional phrase',
+    'PRN': 'Parenthetical',
+    'PRT': 'Particle',
+    'QP': 'Quantifier phrase',
+    'ROOT': 'Root',
+    'RRC': 'Reduced relative clause',
+    'S': 'Simple declarative clause',
+    'SBAR': 'Clause introduced by a subordinating conjunction',
+    'SBARQ': 'Direct question introduced by a wh-word/phrase',
+    'SINV': 'Inverted declarative sentence',
+    'SQ': 'Inverted yes/no question',
+    'UCP': 'Unlike coordinated phrase',
+    'VP': 'Verb phrase',
+    'WHADJP': 'Wh-adjective phrase',
+    'WHADVP': 'Wh-adverb phrase',
+    'WHNP': 'Wh-noun phrase',
+    'WHPP': 'Wh-prepositional phrase',
+    'X': 'Unknown or unbracketable',
+    '``': 'Opening quotation mark',
+}
+
+TTRFEAT2DESC = {
+    'ADJ': 'Type-token ratio for adjectives',
+    'ADV': 'Type-token ratio for adverbs',
+    'NOUN': 'Type-token ratio for nouns',
+    'OTHER': 'Type-token ratio for other words',
+    'VERB': 'Type-token ratio for verbs',
+    'mean': 'Mean type-token ratio',
 }
 
 # Combined feature descriptions
@@ -263,6 +315,8 @@ FEAT2DESC = {
     **{f'pos_{x}':v for x,v in POS2DESC.items()},
     **{f'deprel_{x}':v for x,v in DEP2DESC.items()},
     **{f'sent_{x}':v for x,v in SENTFEAT2DESC.items()},
+    **{f'phrase_{x}':v for x,v in PHRASEFEAT2DESC.items()},
+    **{f'ttr_{x}':v for x,v in TTRFEAT2DESC.items()},
 }
 
 # POS names mapping

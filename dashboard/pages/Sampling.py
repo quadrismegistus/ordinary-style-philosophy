@@ -12,9 +12,11 @@ import streamlit as st
 import pandas as pd
 from collections import Counter
 import plotly.express as px
+from streamlit_local_storage import LocalStorage
 from utils import *
 
 st.set_page_config(page_title="Classification", layout="wide")
+ls = LocalStorage()
 
 st.title("Classification")
 st.caption("Select two groups to train a classifier (UI only for now).")
@@ -77,6 +79,8 @@ def build_metadata_query(discipline=None, period=None, journal=None):
 def group_selector(df_meta: pd.DataFrame, title: str, key_prefix: str):
     st.subheader(title)
 
+    group_name = st.text_input("Group Name", value=title, key=f"{key_prefix}_name")
+
     discipline_opts = _get_options(df_meta, "discipline")
     period_opts = _get_options(df_meta, "period")
     journal_opts = _get_options(df_meta, "journal")
@@ -113,7 +117,7 @@ def group_selector(df_meta: pd.DataFrame, title: str, key_prefix: str):
     query_str = build_metadata_query(
         discipline=sel_discipline, period=sel_period, journal=sel_journal
     )
-    return query_struct, query_str
+    return group_name, query_struct, query_str
 
 
 df_meta = load_metadata()
@@ -121,12 +125,12 @@ df_meta = load_metadata()
 left, mid, right = st.columns([5,1,5], vertical_alignment="center", gap="small")
 
 with left:
-    query_a_struct, query_a_str = group_selector(df_meta, "Group 1", "grp_a")
+    name_a, query_a_struct, query_a_str = group_selector(df_meta, "Group 1", "grp_a")
     if query_a_str:
         st.code(query_a_str)
 
 with right:
-    query_b_struct, query_b_str = group_selector(df_meta, "Group 2", "grp_b")
+    name_b, query_b_struct, query_b_str = group_selector(df_meta, "Group 2", "grp_b")
     if query_b_str:
         st.code(query_b_str)
 
@@ -235,8 +239,24 @@ def load_slice_sample(query_a: str, query_b: str):
 # col1, col2, col3 = st.columns([5, 1, 5])
 with mid:
     submit = st.button("Compare", type="primary")
+    save = st.button("Save")
 
-
+if save:
+    # Save both group names and their queries to localStorage
+    saved_data = {
+        "group_a": {
+            "name": name_a,
+            "query_str": query_a_str,
+            "query_struct": query_a_struct
+        },
+        "group_b": {
+            "name": name_b,
+            "query_str": query_b_str,
+            "query_struct": query_b_struct
+        }
+    }
+    ls.setItem("osp_comparison_groups", saved_data)
+    st.success(f"Groups '{name_a}' and '{name_b}' saved to localStorage!")
 
 if submit:
     try:

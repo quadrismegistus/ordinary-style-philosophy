@@ -672,3 +672,87 @@ def extract_slice_feats(docstr, normalize=NORMALIZE_FEAT_DATA):
         for k,v in out_d.items():
             out_d[k] = v / num_words * 1000
     return out_d
+
+
+
+
+
+def get_diff_rows(df_smpl_feats,group1='Philosophy',group2='Literature'):
+    new_rows = []
+    print('diff_rows',group1,group2)
+    for feat,feat_df in df_smpl_feats.groupby('feat'):
+        feat2means = feat_df.groupby('target').mean(numeric_only=True)
+        z1 = feat2means.loc[group1,'z']
+        z2 = feat2means.loc[group2,'z']
+        z_diff = z1 - z2
+        raw1 = feat2means.loc[group1,'raw']
+        raw2 = feat2means.loc[group2,'raw']
+        raw_diff = raw1 - raw2
+        new_row = {
+            'feat': feat,
+            'target': f'{group1} - {group2}',
+            'z': z_diff,
+            'raw': raw_diff,
+        }
+        new_rows.append(new_row)
+    return pd.DataFrame(new_rows)
+
+
+def get_balanced_slice_sample_feats(groups_train, df_smpl=None, sample_size=None, balance=True, with_diff_rows=True):
+    name1, query1 = groups_train[0]
+    name2, query2 = groups_train[1]
+
+    df_smpl = get_balanced_slice_sample(
+        groups_train, 
+        sample_size=sample_size, 
+        balance=balance
+    ) if df_smpl is None else df_smpl
+
+    print(f"Loading features for {len(df_smpl)} slices...")
+    df_all_feats_z = get_all_feats(normalize=True)
+    df_all_feats_raw = get_all_feats(normalize=False)
+
+    print(f"Filtering valid slices...")
+    valid_ids = set(df_smpl.slice_id) & set(df_all_feats_z.index)
+    df_smpl_valid = df_smpl[df_smpl.slice_id.isin(valid_ids)].set_index('slice_id')
+    df_smpl_feats_z = df_all_feats_z.loc[df_smpl_valid.index].copy()
+    df_smpl_feats_z['_target'] = df_smpl_valid['_target']
+    
+    df_smpl_feats_raw = df_all_feats_raw.loc[df_smpl_valid.index].copy()
+
+    print(f"Aggregating feature statistics...")
+    # Optimized approach using melt
+    feat_cols = [c for c in df_smpl_feats_z.columns if c and c[0] != '_']
+    
+    df_z_melt = df_smpl_feats_z.reset_index().melt(
+        id_vars=['slice_id', '_target'], 
+        value_vars=feat_cols,
+        var_name='feat', 
+        value_name='z'
+    )
+    df_raw_melt = df_smpl_feats_raw.reset_index().melt(
+        id_vars=['slice_id'], 
+        value_vars=feat_cols,
+        var_name='feat', 
+        value_name='raw'
+    )
+    
+    odf = df_z_melt.merge(df_raw_melt, on=['slice_id', 'feat'])
+    odf = odf.rename(columns={'_target': 'target'})
+    odf = odf.groupby(['feat','target']).mean(numeric_only=True).reset_index()
+
+    if with_diff_rows:
+        print(f"Computing difference rows...")
+        df_diff_rows = get_diff_rows(odf, group1=name1, group2=name2)
+        # feat2diff_rank = df_diff_rows.groupby('feat').feat_diff_rank.first().to_dict()
+        # odf['feat_diff_rank'] = odf['feat'].map(feat2diff_rank)
+        odf = pd.concat([
+            odf.set_index(['feat','target']), 
+            df_diff_rows.set_index(['feat','target'])
+        ]).reset_index()
+    
+    odf['z_abs'] = odf['z'].abs()
+    feat2max_abs_z = odf.groupby('feat').z_abs.max()
+    ranked_feat2max_abs_z = feat2max_abs_z.rank(method='dense', ascending=False).apply(int)    
+    odf['feat_rank'] = odf['feat'].map(ranked_feat2max_abs_z)
+    return odf.sort_values(['feat_rank', 'z'],ascending=[True, False]).set_index(['feat','target'])

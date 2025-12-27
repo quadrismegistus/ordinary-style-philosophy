@@ -121,7 +121,7 @@ def get_text_id2slice_ids():
     return out
 
 
-def get_balanced_slice_sample(groups_train, sample_size=None, verbose=True):
+def get_balanced_slice_sample(groups_train, sample_size=None, balance=True, verbose=True):
     name1, query1 = groups_train[0]
     name2, query2 = groups_train[1]
 
@@ -130,18 +130,18 @@ def get_balanced_slice_sample(groups_train, sample_size=None, verbose=True):
     df_meta_g2 = df_meta.query(query2)
     if not len(df_meta_g1) or not len(df_meta_g2):
         return pd.DataFrame()
-
-
+    
     text2slice_ids = get_text_id2slice_ids()
     slice_ids_g1 = [slice_id for text_id in df_meta_g1.index for slice_id in text2slice_ids[text_id]]
     slice_ids_g2 = [slice_id for text_id in df_meta_g2.index for slice_id in text2slice_ids[text_id]]
 
-    min_size = min(len(slice_ids_g1), len(slice_ids_g2))
-    if sample_size is None or sample_size > min_size:
-        sample_size = min_size
+    if balance:
+        min_size = min(len(slice_ids_g1), len(slice_ids_g2))
+        if sample_size is None or sample_size > min_size:
+            sample_size = min_size
 
-    slice_ids_g1 = random.sample(slice_ids_g1, sample_size)
-    slice_ids_g2 = random.sample(slice_ids_g2, sample_size)
+        slice_ids_g1 = random.sample(slice_ids_g1, sample_size)
+        slice_ids_g2 = random.sample(slice_ids_g2, sample_size)
 
     df_slice_ids_g1 = pd.DataFrame(slice_ids_g1, columns=['slice_id']).assign(_target=name1)
     df_slice_ids_g2 = pd.DataFrame(slice_ids_g2, columns=['slice_id']).assign(_target=name2)
