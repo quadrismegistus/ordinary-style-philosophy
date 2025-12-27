@@ -13,10 +13,29 @@ custom_page = st.Page("pages/Custom.py", title="Custom Input", icon=":material/e
 features_page = st.Page("pages/Features.py", title="Feature Explorer", icon=":material/local_pizza:")
 predict_page = st.Page("pages/Predictions.py", title="Predictions", icon=":material/psychology_alt:")
 passages_page = st.Page("pages/Passages.py", title="Passages", icon=":material/visibility:")
-classification_page = st.Page("pages/Classification.py", title="Classification", icon=":material/model_training:")
-pg = st.navigation(
-    [about_page, predict_page, classification_page, features_page, custom_page, passages_page]
-)
+sample_page = st.Page("pages/Classification.py", title="Classification", icon=":material/model_training:")
+
+pages = {
+    "Info": [
+        about_page,
+    ],
+    "Corpus": [
+        classification_page,
+    ],
+    "Features": [
+        features_page,
+    ],
+    "Predictions": [
+        predict_page,
+    ],
+    "Passages": [
+        passages_page,
+        custom_page,
+    ],
+}
+
+
+pg = st.navigation(pages)
 
 st.set_page_config(page_title="Ordinary Style Philosophy", layout="wide")
 

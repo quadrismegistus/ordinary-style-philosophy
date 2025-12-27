@@ -269,6 +269,22 @@ if submit:
 
     parsed_set = set(load_parsed_slice_ids())
 
+    # # --- Model performance summary on the balanced sample (parsed slices only) ---
+    # sample_parsed_slice_ids = []
+    # slice_probs_md = ""
+    # try:
+    #     if not df_slice_sample.empty and "slice_id" in df_slice_sample.columns:
+    #         sample_slice_ids = df_slice_sample["slice_id"].astype(str).tolist()
+    #         sample_parsed_slice_ids = [sid for sid in sample_slice_ids if sid in parsed_set]
+    #         if sample_parsed_slice_ids:
+    #             slice_probs_md = describe_slice_probs(sample_parsed_slice_ids)
+    # except Exception as e:
+    #     slice_probs_md = f"Could not compute slice prediction summary: {e}"
+
+    # if slice_probs_md:
+    #     st.markdown(slice_probs_md)
+
+
     def slice_df_period_texts(df_slice: pd.DataFrame):
         if df_slice.empty or "period" not in df_slice.columns:
             return pd.DataFrame(columns=["period", "n_texts"])
@@ -358,6 +374,8 @@ if submit:
                 },
             },
         },
+        # "slice_probs_md": slice_probs_md,
+        # "slice_probs_n": int(len(sample_parsed_slice_ids)),
     }
 
 
@@ -446,6 +464,9 @@ if run_data:
     groups = run_data.get("groups", {}) or {}
     samples = run_data.get("samples", {}) or {}
 
+    # slice_probs_md = run_data.get("slice_probs_md") or ""
+    slice_probs_n = int(run_data.get("slice_probs_n", 0) or 0)
+
     g1_group = groups.get("group_a", {}) or {}
     g2_group = groups.get("group_b", {}) or {}
     g1_sample = samples.get("group_a", {}) or {}
@@ -501,6 +522,8 @@ if run_data:
     corpus_texts_long, corpus_parsed_long, corpus_all_long = build_section_period_longs("groups")
     sample_texts_long, sample_parsed_long, sample_all_long = build_section_period_longs("samples")
 
+
+
     with top_corpus:
         st.markdown("### Corpus")
         # h1, h2, h3 = st.columns(3, gap="large")
@@ -545,4 +568,5 @@ if run_data:
         render_metric_row("Num Parsed Slices", g1_s_parsed, g2_s_parsed)
         plot_group_hist(sample_parsed_long, "Parsed slices by period", key="sample_parsed_slices_by_period")
 
+    
 

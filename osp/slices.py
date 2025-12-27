@@ -7,7 +7,7 @@ def get_text_slices(id, force=False, slice_len=1000):
     if slice_len is None:
         slice_len = SLICE_LEN
     
-    stash = HashStash(f'osp_slices_{slice_len}')
+    stash = STASH_SLICES
     if not force and id in stash:
         return {int(k): v for k, v in stash[id].items()}
     txt = get_corpus_txt(id)
@@ -23,7 +23,7 @@ def get_text_freqs(id, slice_len=None, force=False):
     if slice_len is None:
         slice_len = SLICE_LEN
     
-    stash = HashStash(f'osp_freqs_slices_{slice_len}')
+    stash = STASH_FREQS_SLICES
     if not force and id in stash:
         return {int(k): v for k, v in stash[id].items()}
     slices = get_text_slices(id)
@@ -50,7 +50,7 @@ def get_words_freqs_slices(words, slice_len=None):
     if slice_len is None:
         slice_len = SLICE_LEN
     
-    stash = HashStash(f'osp_word_freqs_slices_{slice_len}')
+    stash = STASH_WORD_FREQS_SLICES
     if not any(w not in stash for w in words):
         word2text2count = {
             w: stash[w]
@@ -101,7 +101,7 @@ def get_text_slice_ids(id, n_slices=10):
 
 import itertools
 
-@HashStash('osp_all_text_slice_ids').stashed_result
+@STASH_ALL_TEXT_SLICE_IDS.stashed_result
 def get_all_text_slice_ids(lim=None):
     iterr = STASH_SLICES.items()
     iterr = itertools.islice(iterr,lim)
@@ -156,3 +156,101 @@ def get_balanced_slice_sample(groups_train, sample_size=None, verbose=True):
     
     return odf
     
+
+TARGET_NICKNAMES = {'Philosophy':'Phil', 'Literature':'Lit'}
+
+def get_slice_info_df_preds(slice_ids):
+    from .classify import get_current_pred_probs
+    if isinstance(slice_ids, str): slice_ids = [slice_ids]
+    df_all_preds = get_current_pred_probs()
+    df_preds = df_all_preds.loc[slice_ids]
+    targets = df_preds['target'].unique()
+    comparisons = df_preds['comparison'].unique()
+    predict_types = df_preds['predict_type'].unique()
+    
+    def describe_probs_target(target, dfx):
+        probf = f'prob_{target}'
+        out_d = {}
+        out_d2 = {}
+        out_d3 = {}
+        o = []
+
+        avg_prob = dfx[probf].mean()
+        num_correct = len(dfx.query(f'{probf}>=0.5'))
+        out_d['prob'] = avg_prob
+        # out_d['perc_correct'] = num_correct / len(dfx)
+
+        tname = TARGET_NICKNAMES.get(target, target)
+        for cmp in sorted(comparisons):
+            cmpname = cmp.split('-')[0]
+            dfx_cmp = dfx[dfx['comparison']==cmp]
+            avg_cmp_prob = dfx_cmp[probf].mean()
+            num_cmp_correct = len(dfx_cmp.query(f'{probf}>=0.5'))
+            out_d[f'prob_{cmpname}'] = avg_cmp_prob
+            # out_d2[f'perc_correct_{cmpname}'] = num_cmp_correct / len(dfx_cmp)
+            for pt in predict_types:
+                dfx_cmp_pt = dfx_cmp[dfx_cmp['predict_type']==pt]
+                support = dfx_cmp_pt.iloc[0]['support']
+                num_runs = dfx_cmp_pt.iloc[0]['num_runs']
+                avg_cmp_pt_prob = dfx_cmp_pt[probf].mean()
+                num_cmp_pt_correct = len(dfx_cmp_pt.query(f'{probf}>=0.5'))
+                perc_cmp_pt_correct = num_cmp_pt_correct / len(dfx_cmp_pt)
+                out_d3[f'prob_{cmpname}_{pt}'] = avg_cmp_pt_prob
+                outx = {
+                    'target':target,
+                    'comparison':cmp,
+                    'predict_type':pt,
+                    'prob_correct':avg_cmp_pt_prob,
+                    'perc_correct':perc_cmp_pt_correct,
+                    'num_correct':num_cmp_pt_correct,
+                    'num_runs':num_runs,
+                    'support':support,
+                    'num_samples':len(dfx_cmp_pt),
+                }
+                o.append(outx)
+        return o
+
+    ld = []
+    for target,target_df in df_preds.groupby('target'):
+        out_l = describe_probs_target(target, target_df)
+        ld.extend(out_l)
+    return pd.DataFrame(ld).set_index('target')
+
+
+
+
+def describe_slice_probs(slice_ids, width=90, para='\n\n'):
+    import textwrap
+    out=[]
+    dfx = get_slice_info_df_preds(slice_ids)
+    dfx_q = dfx.select_dtypes(include=['number'])
+    median_cols = ['support','num_correct']
+    sum_cols = ['num_samples']
+    avg_cols = [c for c in dfx_q.columns if c not in set(median_cols+sum_cols)]
+    dfx_target = dfx.groupby('target').agg(
+        {
+            **{c:'mean' for c in avg_cols},
+            **{c:'sum' for c in sum_cols},
+            **{c:'median' for c in median_cols},
+        }
+    )
+    
+    # target_cols = prob_correct	perc_correct	num_correct	support	num_samples
+
+    num_cmps = dfx.comparison.nunique()
+    for target,row in dfx_target.iterrows():
+        out.append(f'''- **{target}** (n={int(row.num_samples):,}) was predicted successfully **{row.perc_correct*100:.1f}%** of the time (across {int(row.num_runs):,} model runs each of {num_cmps} comparisons), with an average confidence of **{row.prob_correct*100:.1f}%**. ''')
+    
+    for target,row in dfx_target.iterrows():
+        target_comparison_df = dfx.query('target==@target')
+        target_comparison_df.sort_values(['prob_correct','perc_correct'],ascending=False,inplace=True)
+        best_cmp = target_comparison_df.iloc[0]
+        worst_cmp = target_comparison_df.iloc[-1]
+        support = int(best_cmp.support)
+        out.append(f'''- Each run of the model had **{support:,}** samples divided evenly.''')
+        out.append(f'''- The best performing comparison was **{best_cmp.comparison.split(" ")[0]}** ({best_cmp.prob_correct*100:.1f}% confidence),  with a success rate of **{best_cmp.perc_correct*100:.1f}%**.''')
+        out.append(f'''- The worst performing comparison was **{worst_cmp.comparison.split(" ")[0]}** ({worst_cmp.prob_correct*100:.1f}% confidence), with a success rate of **{worst_cmp.perc_correct*100:.1f}%**.''' )
+        out
+        break
+
+    return para.join(textwrap.fill(x, width=width) for x in out)

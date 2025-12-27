@@ -24,7 +24,7 @@ word_feat_type, color_column, view_mode = setup_sidebar()
 
 @st.cache_data
 def load_df_feats_gui():
-    return get_dashboard_df_feats().replace([np.inf, -np.inf], np.nan).dropna()
+    return get_dashboard_df_feats().replace([np.inf, -np.inf], np.nan).fillna(0)#.dropna()
 
 df_feats_gui = load_df_feats_gui()
 column_config = {}

@@ -539,3 +539,25 @@ def get_syntax_df(sent):
     dfx = dfx.drop(columns=['clause_head_id'])
     dfx['word_head_dist'] = (dfx['word_head'] - dfx['word_i']).abs()
     return dfx
+
+def is_preterminal(node):
+    return node.height() == 2
+
+def get_node_path_to_root(node):
+    path = [node.label()]
+    while node.parent() is not None:
+        path.append(node.parent().label())
+        node = node.parent()
+    return path
+
+def get_phrase_counts(tree):
+    counter = Counter()
+    for x in tree.subtrees():
+        if is_preterminal(x):
+            terminal = x.leaves()[0]
+            if not terminal or not terminal[0].isalpha():
+                continue
+            for y in get_node_path_to_root(x):
+                if y not in POS2DESC:
+                    counter[y] += 1
+    return counter

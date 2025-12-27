@@ -17,8 +17,8 @@ DEFAULT_SLICE_LEN = 1000
 
 featcols = [
     "feat_desc",
-    "score_mean1",
-    "score_mean2",
+    "mean_Philosophy",
+    "mean_Literature",
     "score_mean3",
     "score_mean_diff_3-1",
     "score_mean_diff_3-2",
@@ -110,7 +110,7 @@ def plot_predictive_features(df_new_feats):
     figld = []
     for i, row in df_new_feats.iterrows():
         # Scale specific features as in notebook
-        s1, s2, s3 = row["score_mean1"], row["score_mean2"], row["score_mean3"]
+        s1, s2, s3 = row["mean_Philosophy"], row["mean_Literature"], row["score_mean3"]
         if row["feat_name"].startswith("num_words_in") or row["feat_name"] == "height":
             s1, s2, s3 = s1 / 10, s2 / 10, s3 / 10
 

@@ -40,7 +40,9 @@ BAD_DEPREL = {"flat"}
 
 # Paths
 PATH_HERE = os.path.dirname(os.path.abspath(__file__))
-PATH_DATA = os.path.join(PATH_HERE, "..", "data")
+PATH_DATA = os.path.abspath(os.path.join(PATH_HERE, "..", "data"))
+PATH_DATA_RAW = os.path.join(PATH_DATA, "raw")
+PATH_DATA_STASH = os.path.join(PATH_DATA_RAW, "stash")
 PATH_METADATA = os.path.join(PATH_DATA, "metadata.csv")
 PATH_TXT = os.path.join(PATH_DATA, "txt")
 FN_PMLA = os.path.join(PATH_DATA, "raw/LitStudiesJSTOR.jsonl")
@@ -55,22 +57,30 @@ PATH_TOTAL_TEXT_COUNTS = os.path.join(PATH_DATA, "total_text_counts.json")
 PATH_FEAT_WEIGHTS = os.path.join(PATH_DATA, "feats_perspectival2.xlsx")
 
 # Stashes
-NLP_STASH = HashStash("osp_nlp")
-PMLA_STASH = HashStash("osp_pmla")
-JSTOR_STASH = HashStash("osp_jstor")
-DF_STASH = HashStash("osp_df", serializer="pickle")
-STASH_WORD_FREQS = HashStash("osp_word_freqs", append_mode=False)
-STASH_POS_COUNTS = HashStash("osp_slices_1000_pos_counts")
-STASH_FEAT2WORD2COUNT = HashStash("osp_slices_1000_feat2word2count")
-STASH_FEAT2WORD2EG = HashStash("osp_slices_1000_feat2word2eg")
-STASH_SENT_FEAT_COUNTS = HashStash("osp_slices_1000_sent_feat_counts")
-STASH_SLICES = HashStash("osp_slices_1000")
-STASH_SLICES_NLP = HashStash("osp_slices_1000_nlp")
-STASH_SLICE_FEATS = HashStash("osp_slices_1000_feats")
-STASH_COUNTS = HashStash("osp_counts")
-STASH_PREDS_FEATS = HashStash('osp_preds_feats')
+def get_stash(name, **kwargs):
+    return HashStash(os.path.join(PATH_DATA_STASH, name), **kwargs)
 
-NORMALIZE_DATA = False
+
+NLP_STASH = get_stash("osp_nlp")
+PMLA_STASH = get_stash("osp_pmla")
+JSTOR_STASH = get_stash("osp_jstor")
+DF_STASH = get_stash("osp_df", serializer="pickle")
+STASH_WORD_FREQS = get_stash("osp_word_freqs", append_mode=False)
+STASH_POS_COUNTS = get_stash(f"osp_slices_{SLICE_LEN}_pos_counts")
+STASH_FEAT2WORD2COUNT = get_stash(f"osp_slices_{SLICE_LEN}_feat2word2count")
+STASH_FEAT2WORD2EG = get_stash(f"osp_slices_{SLICE_LEN}_feat2word2eg")
+STASH_SENT_FEAT_COUNTS = get_stash(f"osp_slices_{SLICE_LEN}_sent_feat_counts")
+STASH_SLICES = get_stash(f"osp_slices_{SLICE_LEN}")
+STASH_SLICES_NLP = get_stash(f"osp_slices_{SLICE_LEN}_nlp")
+STASH_SLICE_FEATS = get_stash(f"osp_slices_{SLICE_LEN}_feats")
+STASH_COUNTS = get_stash("osp_counts")
+STASH_PREDS_FEATS = get_stash('osp_preds_feats')
+STASH_ALL_FEATS = get_stash('osp_all_feats')
+STASH_FREQS_SLICES = get_stash(f'osp_freqs_slices_{SLICE_LEN}')
+STASH_DF_PREDS_FOR_SLICES = get_stash('osp_df_preds_for_slices')
+STASH_PARSED_SLICE_IDS = get_stash('osp_parsed_slice_ids')
+STASH_ALL_TEXT_SLICE_IDS = get_stash('osp_all_text_slice_ids')
+
 
 # Wordsets
 WORDSETS = ["top", "content", "non_content"]
@@ -255,8 +265,6 @@ FEAT2DESC = {
     **{f'sent_{x}':v for x,v in SENTFEAT2DESC.items()},
 }
 
-stashed_result = HashStash("osp_stashed_result").stashed_result
-
 # POS names mapping
 pos_names = {"N": "noun", "V": "verb", "J": "adjective", "R": "adverb"}
 
@@ -386,8 +394,9 @@ COLS_FEAT_DESCS = {
 CORPUS_MIN_YEAR = 1900
 CORPUS_MAX_YEAR = 2025
 CORPUS_PERIODIZE_BY = 25
-CV_FEAT_TYPES = ['deprel','pos','sent']
+CV_FEAT_TYPES = None
 
 COLOR_SENT_BY_COL = 'weight_z'
 COLOR_SENT_BY_FEAT = 'deprel'
-NORMALIZE_FEAT_DATA = False
+NORMALIZE_FEAT_DATA = True
+NORMALIZE_CLASSIFY_DATA = True

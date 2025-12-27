@@ -114,7 +114,7 @@ def get_slice_feat_counts(id, bad_feats=None):
     return out_d
 
 
-# @cache
+@cache
 def get_all_feats(normalize=NORMALIZE_FEAT_DATA, feat_types=None, **kwargs):
     odf = get_all_feats_stashed()
     
@@ -139,7 +139,7 @@ def get_all_feats(normalize=NORMALIZE_FEAT_DATA, feat_types=None, **kwargs):
 
 
 # @stashed_result
-@HashStash('osp_all_feats_stashed').stashed_result
+@STASH_ALL_FEATS.stashed_result
 def get_all_feats_stashed():
     from .constants import STASH_SLICE_FEATS
     
@@ -157,82 +157,6 @@ def get_all_feats_stashed():
     return df_all_feats
     
 
-def get_feat_counts(ids, normalize=True, renormalize=False, feat_types=CV_FEAT_TYPES, **kwargs):
-    df_all_feats = get_all_feats(normalize=normalize, feat_types=feat_types)
-    idset = set(ids)
-    slice_ids = [id for id in df_all_feats.index if id.split('__', 1)[0] in idset]
-    df_slice_feats = df_all_feats.loc[slice_ids]
-    if renormalize:
-        df_slice_feats = df_slice_feats.copy()
-        for c in df_slice_feats.columns:
-            cmean = df_slice_feats[c].mean()
-            cstd = df_slice_feats[c].std()
-            df_slice_feats[c] = (df_slice_feats[c] - cmean) / cstd
-    return df_slice_feats
-
-
-# def extract_slice_feats(docstr, context_len=None, force=False, return_dict=True):
-#     from .constants import CONTEXT_LEN, BAD_POS, BAD_DEPREL
-#     from .nlp_utils import get_sent_stats, get_word_context
-    
-#     if context_len is None:
-#         context_len = CONTEXT_LEN
-    
-#     doc = stanza.Document.from_serialized(docstr) if isinstance(docstr, str) else docstr
-#     if doc is None:
-#         return {}
-
-#     o = []
-#     allwords=[]
-#     for sent_i, sent in enumerate(doc.sentences):
-#         for word_i, word in enumerate(sent.words):
-#             if word.pos in BAD_POS or word.deprel in BAD_DEPREL:
-#                 continue
-#             allwords.append(word.text.lower())
-#             sent_d = get_sent_stats(sent)
-
-#             pos = word.xpos
-#             deprel = word.deprel
-#             eg_word = word.text.lower()
-#             eg_context = get_word_context(doc, sent_i, word_i, context_len=context_len).strip()
-            
-#             out_d = {
-#                 'sent_i': sent_i,
-#                 'word_i': word_i,
-#                 'word': eg_word,
-#                 'pos': pos,
-#                 'deprel': deprel,
-#                 'context': eg_context,
-#                 **{f'sent_{k}': v for k, v in sent_d.items() if k not in {'sent', 'num_words'}}
-#             }
-#             o.append(out_d)
-#     df1 = pd.DataFrame(o)
-#     if not return_dict:
-#         return df1
-    
-#     odx = df1.drop(columns=['sent_i', 'word_i']).mean(numeric_only=True)
-#     orig_d = df1.drop(columns=['sent_i', 'word_i']).mean(numeric_only=True).to_dict()
-#     pos_d = df1.pos.value_counts().to_dict()
-#     deprel_d = df1.deprel.value_counts().to_dict()
-#     ttr = len(set(allwords)) / len(allwords) * 1000
-
-#     allwords_recog = get_recog_words(allwords)
-#     ttr_recog = len(set(allwords_recog)) / len(allwords_recog) * 1000
-
-#     num_recog_words = len(allwords_recog)
-#     num_words = len(allwords)
-#     perc_recog_words = num_recog_words / num_words * 1000
-
-#     odx = {
-#         **orig_d,
-#         **{f'pos_{k}': (v/sum(pos_d.values()))*1000 for k, v in pos_d.items()},
-#         **{f'deprel_{k}': (v/sum(deprel_d.values()))*1000 for k, v in deprel_d.items()},
-#         'ttr_mean': ttr,
-#         'ttr_recog': ttr_recog,
-#         'num_words': num_words,
-#         'num_recog_words': num_recog_words,
-#     }
-#     return odx
 
 # @stashed_result
 def get_mdw_feats(groups_train, feat_n=10, feat_n_egs=5, **kwargs):
@@ -339,32 +263,91 @@ def get_top_word_egs_str(top_words):
     return ', '.join(f'{w[0]} ({w[1]})' if isinstance(w, tuple) else str(w) for w in top_words)
 
 
-def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, normalize=NORMALIZE_DATA, feat_types=CV_FEAT_TYPES, **kwargs):
+def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, normalize=NORMALIZE_CLASSIFY_DATA, feat_types=CV_FEAT_TYPES, **kwargs):
+    """
+    Returns a slice-level feature matrix with two partitions:
+    - _type=="CV": balanced sample of slice_ids for the two groups
+    - _type=="Unseen": all remaining slices
+
+    Sampling is now driven by osp.slices.get_balanced_slice_sample() (metadata-level),
+    then features are pulled for the sampled slice_ids.
+    """
+    from .slices import get_balanced_slice_sample, get_text_id2slice_ids
+
+    sample_size = kwargs.pop("sample_size", None)
+
     df_meta = get_corpus_metadata()
     name1, query1 = groups_train[0]
     name2, query2 = groups_train[1]
 
-    df_meta1 = df_meta.query(query1)
-    df_meta2 = df_meta.query(query2)
-
-    
     df_scores_all = get_all_feats(normalize=normalize, feat_types=feat_types, **kwargs).fillna(0)
-    df_scores1 = get_feat_counts(df_meta1.index.tolist(), normalize=normalize, renormalize=False, feat_types=feat_types, **kwargs)
-    df_scores2 = get_feat_counts(df_meta2.index.tolist(), normalize=normalize, renormalize=False, feat_types=feat_types, **kwargs)
 
-    for dfx in [df_scores_all, df_scores1, df_scores2]:
-        dfx['_target'] = [get_text_metadata(i).get(target_col,'') for i in dfx.index]
-        dfx.dropna(subset=['_target'], inplace=True)
-    
+    # --- Choose CV slice ids ---
+    slice_ids_g1 = []
+    slice_ids_g2 = []
+
     if balance:
-        minsize = min(len(df_scores1), len(df_scores2))
-        df_scores1 = df_scores1.sample(n=minsize).assign(_group=name1)
-        df_scores2 = df_scores2.sample(n=minsize).assign(_group=name2)
-    
-    df_scores_cv = pd.concat([df_scores1, df_scores2]).assign(_type='CV')
-    df_scores_rest = df_scores_all.drop(df_scores_cv.index).assign(_type='Unseen', _group='Unseen')
-    df_scores = pd.concat([df_scores_cv, df_scores_rest])
-    return df_scores
+        df_slice_sample = get_balanced_slice_sample(
+            groups_train, sample_size=sample_size, verbose=False
+        )
+        if not df_slice_sample.empty and "slice_id" in df_slice_sample.columns:
+            slice_ids_g1 = (
+                df_slice_sample.query("_target==@name1")["slice_id"].astype(str).tolist()
+            )
+            slice_ids_g2 = (
+                df_slice_sample.query("_target==@name2")["slice_id"].astype(str).tolist()
+            )
+    else:
+        df_meta1 = df_meta.query(query1)
+        df_meta2 = df_meta.query(query2)
+        text2slice_ids = get_text_id2slice_ids()
+        slice_ids_g1 = [
+            slice_id
+            for text_id in df_meta1.index
+            for slice_id in text2slice_ids.get(text_id, [])
+        ]
+        slice_ids_g2 = [
+            slice_id
+            for text_id in df_meta2.index
+            for slice_id in text2slice_ids.get(text_id, [])
+        ]
+        if sample_size is not None:
+            sample_size = int(sample_size)
+            if sample_size > 0:
+                slice_ids_g1 = (
+                    random.sample(slice_ids_g1, min(sample_size, len(slice_ids_g1)))
+                    if slice_ids_g1
+                    else []
+                )
+                slice_ids_g2 = (
+                    random.sample(slice_ids_g2, min(sample_size, len(slice_ids_g2)))
+                    if slice_ids_g2
+                    else []
+                )
+
+    # Keep only slice ids that we actually have features for
+    idx_all = set(df_scores_all.index.astype(str))
+    slice_ids_g1 = [sid for sid in slice_ids_g1 if sid in idx_all]
+    slice_ids_g2 = [sid for sid in slice_ids_g2 if sid in idx_all]
+
+    df_scores1 = df_scores_all.loc[slice_ids_g1].copy() if slice_ids_g1 else df_scores_all.iloc[0:0].copy()
+    df_scores2 = df_scores_all.loc[slice_ids_g2].copy() if slice_ids_g2 else df_scores_all.iloc[0:0].copy()
+
+    # Attach target labels (discipline, etc.) per slice id
+    for dfx in [df_scores_all, df_scores1, df_scores2]:
+        dfx["_target"] = [get_text_metadata(i).get(target_col, "") for i in dfx.index]
+        dfx.dropna(subset=["_target"], inplace=True)
+
+    # Attach CV group labels
+    df_scores1 = df_scores1.assign(_group=name1)
+    df_scores2 = df_scores2.assign(_group=name2)
+
+    df_scores_cv = pd.concat([df_scores1, df_scores2]).assign(_type="CV")
+    df_scores_rest = (
+        df_scores_all.drop(df_scores_cv.index, errors="ignore")
+        .assign(_type="Unseen", _group="Unseen")
+    )
+    return pd.concat([df_scores_cv, df_scores_rest])
 
 
 @cache
@@ -376,7 +359,7 @@ def get_current_feat_weights(*args,group_by=('feature',), **kwargs):
     return odf
 
 @cache
-@HashStash('osp_parsed_slice_ids').stashed_result
+@STASH_PARSED_SLICE_IDS.stashed_result
 def get_parsed_slice_ids():
     return list(STASH_SLICES_NLP.keys())
 
@@ -419,12 +402,12 @@ def get_nice_df_feats(df_feats=None):
         for cmp,cmp_df in featdf.groupby('comparison'):
             cmp_prd = cmp.split(' ')[0].split('-')[0]
             cmp_key_P = f'P{cmp_prd}'
-            val_P = float(cmp_df.score_mean1.mean())
+            val_P = float(cmp_df.mean_Philosophy.mean())
             vals_P.append(val_P)
             out_d2[cmp_key_P] = val_P
             
             cmp_key_L = f'L{cmp_prd}'
-            val_L = float(cmp_df.score_mean2.mean())
+            val_L = float(cmp_df.mean_Literature.mean())
             vals_L.append(val_L)
             # out_d2[cmp_key_L] = val_L
         out_d2['P2000/P1925'] = np.log(out_d2['P2000']/out_d2['P1925']) if out_d2['P1925'] else np.nan
@@ -434,7 +417,7 @@ def get_nice_df_feats(df_feats=None):
         out_ld.append({**out_d, **out_d2})
     
     odf = pd.DataFrame(out_ld)
-    odf = odf.round(2).sort_values('P/L',ascending=False).dropna()
+    odf = odf.round(2).sort_values('P/L',ascending=False).fillna(0)
     return odf
 
 def get_dashboard_df_feats(df_feats=None):
@@ -458,8 +441,8 @@ def get_dashboard_df_feats(df_feats=None):
         for period,cmpname in sorted(period2cmp.items()):
             cmp_df = featdf.query('comparison==@cmpname')
             vals['W'].append(w:=float(cmp_df.weight.mean()))
-            vals['P'].append(p:=float(cmp_df.score_mean1.mean()))
-            vals['L'].append(l:=float(cmp_df.score_mean2.mean()))
+            vals['P'].append(p:=float(cmp_df.mean_Philosophy.mean()))
+            vals['L'].append(l:=float(cmp_df.mean_Literature.mean()))
             vals['P/L'].append(np.log(p / l) if l else np.nan)
 
             if first_period is None:
@@ -499,7 +482,7 @@ def get_dashboard_df_feats(df_feats=None):
     return odf[[c for c in COLS_FEATS if c in odf.columns]].set_index('feature')
 
     
-def get_slice_feats_by_word(doc, weight_cols = ['weight','score_mean1','score_mean2']):
+def get_slice_feats_by_word(doc, weight_cols = ['weight','mean_Philosophy','mean_Literature']):
     df_feat_weights = get_current_feat_weights()
     df_slice_feats = extract_slice_feats(doc, return_dict=False)
 
@@ -566,32 +549,22 @@ def extract_deprel_feats(doc):
             counter[deprel] += count
     return counter
 
-def get_node_path_to_root(tree):
-    path = []
-    while node.parent is not None:
-        path.append(node.parent)
-        node = node.parent
-    return path
 
 def extract_phrase_feats_sent(sent):
-    counter = Counter()
+    from .sentences import get_phrase_counts
     tree = get_sent_tree(sent)
-    for node in tree.subtrees():
-        label = node.label()
-        if label.isalpha() and label not in POS2DESC:
-            counter[label] += 1
-    return counter
+    return get_phrase_counts(tree)
 
+# BAD_PHRASE_FEATS = ['ROOT','S']
+BAD_PHRASE_FEATS = []
 def extract_phrase_feats(doc):
     counter = Counter()
     for sent in doc.sentences:
         sent_phrase_feats = extract_phrase_feats_sent(sent)
         for phrase,count in sent_phrase_feats.items():
-            counter[phrase] += count
+            if phrase not in BAD_PHRASE_FEATS:
+                counter[phrase] += count
     return counter
-
-
-
 
 def extract_ttr_feats(doc, within_pos = ["NOUN","ADJ","VERB","ADV"], max_tokens=1000,normalize=True):
     counter = Counter()
@@ -609,7 +582,7 @@ def extract_ttr_feats(doc, within_pos = ["NOUN","ADJ","VERB","ADV"], max_tokens=
             counter[tok] += 1
             if ntok > max_tokens:
                 break
-        if ntok > max_tokens:
+        if ntok > max_tokens:   # this is a hack to stop the loop early
             break
     
     def d2ttr(d):
@@ -631,7 +604,7 @@ def extract_ttr_feats(doc, within_pos = ["NOUN","ADJ","VERB","ADV"], max_tokens=
 
 
 
-def extract_syntax_feats_sent(sent, incl_formula=True, max_n_clauses=3):
+def extract_syntax_feats_sent(sent, incl_formula=False, max_n_clauses=5):
     from .sentences import get_syntax_df
     from .nlp_utils import get_clause_form
 
@@ -650,20 +623,20 @@ def extract_syntax_feats_sent(sent, incl_formula=True, max_n_clauses=3):
 
     
     out_d = {}
-    out_d['IC']=num_ic
-    out_d['DC']=num_dc
+    # out_d['IC']=num_ic
+    # out_d['DC']=num_dc
     # out_d['C']=df.clause_id.nunique()
     # out_d['C*']=df.clause_i.nunique()
 
     df_words = df#[df.word_deprel!='punct']
-    # out_d['DCw']=len(df_words[df_words.clause_type=='sub'])
-    # out_d['ICw']=len(df_words[df_words.clause_type=='main'])
+    out_d['DC']=len(df_words[df_words.clause_type=='sub'])
+    out_d['IC']=len(df_words[df_words.clause_type=='main'])
 
-    avg_s = df.max(numeric_only=True)
+    avg_s = df.max(numeric_only=True).round(0)
     out_d['Wd'] = int(avg_s['word_depth'])
     out_d['Cd'] = int(avg_s['clause_depth'])
 
-    if num_c < max_n_clauses:
+    if incl_formula and num_c <= max_n_clauses:
         out_d[clause_form]=1
         # out_d[f'{clause_form}w']=len(df)
     
@@ -674,7 +647,7 @@ def extract_syntax_feats(doc):
     return {k:int(v) for k,v in df.sum(numeric_only=True).items()}
 
 
-def extract_slice_feats(docstr, normalize=True):
+def extract_slice_feats(docstr, normalize=NORMALIZE_FEAT_DATA):
     doc = stanza.Document.from_serialized(docstr) if isinstance(docstr, (str,bytes)) else docstr
     if doc is None:
         return {}

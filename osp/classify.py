@@ -7,7 +7,7 @@ def classify_data(
     cv=10,
     verbose=True,
     balance=False,
-    normalize=NORMALIZE_DATA,
+    normalize=NORMALIZE_CLASSIFY_DATA,
     sample_size=None,
     **kwargs,
 ):
@@ -37,6 +37,15 @@ def classify_data(
         df_data[c] = pd.to_numeric(df_data[c], errors="coerce")
     X_data_norm = df_data.fillna(0).values
     y_data = _data[target_col].fillna("").values
+
+    # Mean feature values per target (for interpreting weights)
+    # Use the same numeric + fillna(0) treatment as the classifier input.
+    df_means_by_target = (
+        df_data.fillna(0)
+        .assign(_target=_data[target_col].fillna("").values)
+        .groupby("_target")
+        .mean(numeric_only=True)
+    )
 
     # Initialize Logistic Regression
     model = LogisticRegression(class_weight="balanced", max_iter=1000)
@@ -69,6 +78,14 @@ def classify_data(
         weights_df = pd.DataFrame(
             {"feature": feature_names, "weight": model.coef_[0]}
         ).sort_values("weight", ascending=False)
+        # Add mean_{class} columns for the two classes
+        cls1, cls2 = model.classes_[:2]
+        means1 = df_means_by_target.loc[cls1] if cls1 in df_means_by_target.index else None
+        means2 = df_means_by_target.loc[cls2] if cls2 in df_means_by_target.index else None
+        if means1 is not None:
+            weights_df[f"mean_{cls1}"] = weights_df["feature"].map(means1.to_dict()).fillna(0.0)
+        if means2 is not None:
+            weights_df[f"mean_{cls2}"] = weights_df["feature"].map(means2.to_dict()).fillna(0.0)
     else:
         # Multi-class case: coef_ is (n_classes, n_features)
         weights_df = pd.DataFrame(
@@ -76,6 +93,11 @@ def classify_data(
         )
         weights_df.index.name = "feature"
         weights_df = weights_df.reset_index()
+        # Add mean_{class} columns for each class
+        for cls in model.classes_:
+            if cls in df_means_by_target.index:
+                means = df_means_by_target.loc[cls].to_dict()
+                weights_df[f"mean_{cls}"] = weights_df["feature"].map(means).fillna(0.0)
 
     # Return a DataFrame of relevant information
     test_label = " / ".join(model.classes_)
@@ -83,198 +105,20 @@ def classify_data(
     results_df = pd.DataFrame(
         {
             "id": _data.index,
-            "true_label": y_data,
-            "pred_label": y_pred,
+            # "true_label": y_data,
+            # "pred_label": y_pred,
             f"prob_{prob_name1}": y_probas[:, 0],
             f"prob_{prob_name2}": y_probas[:, 1],
-            "test_label": test_label,
-            "confidence": confidence_scores,
-            "correct": (y_pred == y_data),
-            "accuracy": accuracy,
+            # "test_label": test_label,
+            # "confidence": confidence_scores,
+            # "correct": (y_pred == y_data),
+            # "accuracy": accuracy,
             "support": _data.shape[0],
         }
     )
     results_df.set_index("id", inplace=True)
     return results_df, weights_df, model
 
-
-def iter_pairwise_samples(
-    data, colname="period", data_meta=None, balance=True, sample_size=None
-):
-    from .data_loaders import get_corpus_metadata
-
-    data_meta = get_corpus_metadata() if data_meta is None else data_meta
-    min_grp_size = min(data_meta.groupby(colname).size())
-    data_meta = data_meta.groupby(colname).sample(n=min_grp_size)
-    data_smpl = data.sample(frac=1)
-
-    coltypes = data_meta[colname].unique()
-    for coltype1 in coltypes:
-        for coltype2 in coltypes:
-            if coltype1 >= coltype2:
-                continue
-            df_meta_yes = data_meta.query(f"{colname}==@coltype1")
-            df_meta_no = data_meta.query(f"{colname}==@coltype2")
-            index_name = "id"
-            data_smpl2 = data_smpl.reset_index()
-            ok_yes = list(df_meta_yes.index)
-            ok_no = list(df_meta_no.index)
-
-            data_smpl_yes = data_smpl2.query(f"{index_name} in @ok_yes").assign(
-                _target=coltype1
-            )
-            data_smpl_no = data_smpl2.query(f"{index_name} in @ok_no").assign(
-                _target=coltype2
-            )
-            data_smpl_yes = data_smpl_yes.set_index(index_name)
-            data_smpl_no = data_smpl_no.set_index(index_name)
-
-            if balance:
-                if sample_size is None:
-                    minsize = min(data_smpl_yes.shape[0], data_smpl_no.shape[0])
-                    data_smpl_yes = data_smpl_yes.sample(n=minsize)
-                    data_smpl_no = data_smpl_no.sample(n=minsize)
-                else:
-                    data_smpl_yes = data_smpl_yes.sample(n=sample_size, replace=True)
-                    data_smpl_no = data_smpl_no.sample(n=sample_size, replace=True)
-            yield (coltype1, coltype2), pd.concat([data_smpl_yes, data_smpl_no]).sample(
-                frac=1
-            )
-
-
-def classify_pairwise_samples(
-    data, colname="period", data_meta=None, balance=True, sample_size=None, verbose=True
-):
-    iterr = iter_pairwise_samples(
-        data,
-        colname=colname,
-        data_meta=data_meta,
-        balance=balance,
-        sample_size=sample_size,
-    )
-
-    out_preds = []
-    out_feats = []
-    for g, gfx in tqdm(list(iterr), desc=f"classifying pairwise samples for {colname}"):
-        meta = {
-            "test_group": " vs. ".join(g) if isinstance(g, (list, tuple)) else g,
-            "test_group_type": colname,
-        }
-        gdf_preds, gdf_feats = classify_data(gfx, verbose=verbose)
-        out_preds.append(gdf_preds.assign(**meta))
-        out_feats.append(gdf_feats.assign(**meta))
-    odf_preds, odf_feats = pd.concat(out_preds), pd.concat(out_feats)
-    odf_preds.sort_values("accuracy", ascending=False, inplace=True)
-    odf_feats.sort_values("weight", ascending=False, inplace=True)
-    return odf_preds, odf_feats
-
-
-def classify_all_data(
-    wordset2data,
-    classify_by=["discipline"],
-    data_meta=None,
-    sample_size=2500,
-    verbose=False,
-):
-    all_df_preds = []
-    all_df_feats = []
-
-    for wordset, data in wordset2data.items():
-        for classify_by_x in classify_by:
-            df_preds, df_feats = classify_pairwise_samples(
-                data,
-                classify_by_x,
-                data_meta=data_meta,
-                sample_size=sample_size,
-                verbose=verbose,
-            )
-            all_df_preds.append(
-                df_preds.assign(wordset=wordset, classify_by=classify_by_x)
-            )
-            all_df_feats.append(
-                df_feats.assign(wordset=wordset, classify_by=classify_by_x)
-            )
-
-    all_df_preds = pd.concat(all_df_preds) if all_df_preds else pd.DataFrame()
-    all_df_feats = pd.concat(all_df_feats) if all_df_feats else pd.DataFrame()
-
-    return all_df_preds, all_df_feats
-
-
-def classify_by_feat_counts(
-    groups,
-    predict_all=False,
-    num_runs=1,
-    sample_size=None,
-    incl_deprel=True,
-    incl_pos=True,
-    cv=10,
-    feat_n=10,
-    feat_min_count=1,
-    avg_runs=True,
-    balance=True,
-    **kwargs,
-):
-    from .constants import CLASSIFY_BY_FEAT_SAMPLE_SIZE
-    from .features import get_feat_counts, get_all_feats
-
-    if sample_size is None:
-        sample_size = CLASSIFY_BY_FEAT_SAMPLE_SIZE
-
-    name1, ids1 = groups[0]
-    name2, ids2 = groups[1]
-    df_pos_grp1 = get_feat_counts(ids1)
-    df_pos_grp2 = get_feat_counts(ids2)
-
-    # Get all features for prediction if requested
-    df_predict_all = get_all_feats(normalize=True) if predict_all else None
-
-    min_grp_size = min(len(ids1), len(ids2))
-    if sample_size is None:
-        sample_size = min_grp_size
-    print(f"{name1} {len(ids1)} / {name2} {len(ids2)}")
-    l_preds = []
-    l_feats = []
-    l_predicts = []
-    iterr = tqdm(list(range(num_runs)))
-    for nrun in iterr:
-        dfx1 = df_pos_grp1.sample(sample_size, replace=True) if balance else df_pos_grp1
-        dfx2 = df_pos_grp2.sample(sample_size, replace=True) if balance else df_pos_grp2
-        df_pos = pd.concat([dfx1, dfx2])
-        df_pos["_target"] = [name1] * len(dfx1) + [name2] * len(dfx2)
-        iterr.set_description(f"{name1} {len(dfx1)} / {name2} {len(dfx2)}")
-
-        # Call classify_data with optional predict_df
-        res = classify_data(
-            df_pos,
-            predict_df=df_predict_all,
-            target_col="_target",
-            cv=cv,
-            balance=balance,
-            **kwargs,
-        )
-        df_preds, df_feats = res[0], res[1]
-
-        l_preds.append(df_preds.assign(run=nrun))
-        l_feats.append(df_feats.assign(run=nrun))
-
-    if not len(l_preds) or not len(l_feats):
-        return None, None
-
-    odf_preds = pd.concat(l_preds)
-    odf_feats = pd.concat(l_feats)
-
-    # Return predictions if they were collected
-    if l_predicts:
-        odf_predicts = pd.concat(l_predicts)
-        odf_preds = pd.concat(
-            [
-                odf_preds.assign(predict_type="cv"),
-                odf_predicts.assign(predict_type="unseen"),
-            ]
-        )
-
-    return odf_preds, get_df_feats_with_pos_mdw(odf_feats, groups, **kwargs)
 
 
 def get_df_feats_with_pos_mdw(df_feats, groups, **kwargs):
@@ -307,7 +151,7 @@ def classify_then_predict_group(
     num_runs=1,
     verbose=False,
     return_models=False,
-    normalize=NORMALIZE_DATA,
+    normalize=NORMALIZE_CLASSIFY_DATA,
     **kwargs,
 ):
     from .features import get_balanced_cv_data, get_mdw_feats
@@ -335,12 +179,13 @@ def classify_then_predict_group(
         new_probs = cv_model.predict_proba(df_scores_unseen.drop(columns=["_target"]))
         df_new_probs = pd.DataFrame(new_probs)
         df_new_probs.columns = [f'prob_{x}' for x in cv_model.classes_]
-        df_new_probs["pred_label"] = df_new_probs.idxmax(axis=1)[:5] # max prob class
-        df_new_probs["true_label"] = new_target
-        df_new_probs["correct"] = (
-            df_new_probs["pred_label"] == df_new_probs["true_label"]
-        ).apply(int)
-        df_new_probs["test_label"] = " / ".join(cv_model.classes_)
+        # df_new_probs["pred_label"] = df_new_probs.idxmax(axis=1)[:5] # max prob class
+        # df_new_probs["true_label"] = new_target
+        # df_new_probs["correct"] = (
+        #     df_new_probs["pred_label"] == df_new_probs["true_label"]
+        # ).apply(int)
+        # df_new_probs["test_label"] = " / ".join(cv_model.classes_)
+        df_new_probs['support'] = len(df_scores_target)
         df_new_probs["id"] = df_scores_unseen.index
         df_new_probs.set_index("id", inplace=True)
         # df_new_probs
@@ -370,8 +215,8 @@ def classify_then_predict_group(
     ]
 
     df_feats = df_feats.groupby(df_feats_cols).mean(numeric_only=True).reset_index()
-    df_mdw = get_mdw_feats(groups_train, **kwargs)
-    df_feats = df_feats.merge(df_mdw, on="feature", how="left")
+    # df_mdw = get_mdw_feats(groups_train, **kwargs)
+    # df_feats = df_feats.merge(df_mdw, on="feature", how="left")
     # df_feats['group1'],df_feats['group2'] = zip(*df_feats['comparison'].str.split(' vs '))
     return (df_preds, df_feats) if not return_models else (df_preds, df_feats, l_models)
 
@@ -379,7 +224,7 @@ def classify_then_predict_group(
 def classify_then_predict_comparisons(
     comparisons,
     return_models=False,
-    normalize=NORMALIZE_DATA,
+    normalize=NORMALIZE_CLASSIFY_DATA,
     **kwargs,
 ):
     l_preds = []
@@ -393,24 +238,24 @@ def classify_then_predict_comparisons(
         l_feats.append(df_feats.assign(comparison=comparison_name))
         d_models[comparison_name] = models
     odf_preds, odf_feats = pd.concat(l_preds), pd.concat(l_feats)
-    odf_feats["group1"] = [x.split(" vs ")[0] for x in odf_feats["comparison"]]
-    odf_feats["group2"] = [x.split(" vs ")[1] for x in odf_feats["comparison"]]
+    # odf_feats["group1"] = [x.split(" vs ")[0] for x in odf_feats["comparison"]]
+    # odf_feats["group2"] = [x.split(" vs ")[1] for x in odf_feats["comparison"]]
 
-    odf_feats["score_mean_diff"] = odf_feats["score_mean1"] - odf_feats["score_mean2"]
-    odf_feats["score_mean_diff_abs"] = np.abs(odf_feats["score_mean_diff"])
-    odf_feats["score_mean_diff_pct"] = (
-        odf_feats["score_mean_diff"] / odf_feats["score_mean2"]
-    )
-    odf_feats["score_mean_div"] = odf_feats["score_mean1"] / odf_feats["score_mean2"]
-    odf_feats["score_mean_div_abs"] = np.abs(odf_feats["score_mean_div"])
-    odf_feats["score_z_diff"] = odf_feats["score_z1"] - odf_feats["score_z2"]
-    odf_feats["score_z_diff_abs"] = np.abs(odf_feats["score_z_diff"])
-    odf_feats["score_z_diff_pct"] = odf_feats["score_z_diff"] / odf_feats["score_z2"]
-    odf_feats["score_z_div"] = odf_feats["score_z1"] / odf_feats["score_z2"]
-    odf_feats["score_z_div_abs"] = np.abs(odf_feats["score_z_div"])
+    # odf_feats["score_mean_diff"] = odf_feats["score_mean1"] - odf_feats["score_mean2"]
+    # odf_feats["score_mean_diff_abs"] = np.abs(odf_feats["score_mean_diff"])
+    # odf_feats["score_mean_diff_pct"] = (
+    #     odf_feats["score_mean_diff"] / odf_feats["score_mean2"]
+    # )
+    # odf_feats["score_mean_div"] = odf_feats["score_mean1"] / odf_feats["score_mean2"]
+    # odf_feats["score_mean_div_abs"] = np.abs(odf_feats["score_mean_div"])
+    # odf_feats["score_z_diff"] = odf_feats["score_z1"] - odf_feats["score_z2"]
+    # odf_feats["score_z_diff_abs"] = np.abs(odf_feats["score_z_diff"])
+    # odf_feats["score_z_diff_pct"] = odf_feats["score_z_diff"] / odf_feats["score_z2"]
+    # odf_feats["score_z_div"] = odf_feats["score_z1"] / odf_feats["score_z2"]
+    # odf_feats["score_z_div_abs"] = np.abs(odf_feats["score_z_div"])
 
-    odf_feats["feat_name"] = [x.split("_", 1)[-1] for x in odf_feats.feature]
-    odf_feats["feat_type"] = [x.split("_")[0] for x in odf_feats.feature]
+    # odf_feats["feat_name"] = [x.split("_", 1)[-1] for x in odf_feats.feature]
+    # odf_feats["feat_type"] = [x.split("_")[0] for x in odf_feats.feature]
     odf_feats.sort_values("weight", ascending=False, inplace=True)
     return (odf_preds, odf_feats) if not return_models else (odf_preds, odf_feats, d_models)
 
@@ -425,7 +270,7 @@ def get_preds_feats(
     feat_n_egs=10,
     verbose=False,
     return_models=True,
-    normalize=NORMALIZE_DATA,
+    normalize=NORMALIZE_CLASSIFY_DATA,
     **kwargs,
 ):
     return classify_then_predict_comparisons(
@@ -439,6 +284,21 @@ def get_preds_feats(
         normalize=normalize,
         **kwargs,
     )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def get_new_preds_feats(txt):
     doc = get_nlp_doc(txt) if isinstance(txt, str) else txt
@@ -472,23 +332,23 @@ def get_new_preds_feats(txt):
             ld_feats_new.append(d_feats_new)
 
     df_feats_new = pd.DataFrame(ld_feats_new)
-    df_feats_new['score_mean_diff_3-1'] = df_feats_new['score_mean3'] - df_feats_new['score_mean1']
-    df_feats_new['score_mean_diff_3-2'] = df_feats_new['score_mean3'] - df_feats_new['score_mean2']
+    # df_feats_new['score_mean_diff_3-1'] = df_feats_new['score_mean3'] - df_feats_new['score_mean1']
+    # df_feats_new['score_mean_diff_3-2'] = df_feats_new['score_mean3'] - df_feats_new['score_mean2']
 
-    df_feats_new['score_mean_div_3-1'] = df_feats_new['score_mean3'] / df_feats_new['score_mean1']
-    df_feats_new['score_mean_div_3-2'] = df_feats_new['score_mean3'] / df_feats_new['score_mean2']
+    # df_feats_new['score_mean_div_3-1'] = df_feats_new['score_mean3'] / df_feats_new['score_mean1']
+    # df_feats_new['score_mean_div_3-2'] = df_feats_new['score_mean3'] / df_feats_new['score_mean2']
 
-    df_feats_new['score_mean_diff_abs_3-1'] = df_feats_new['score_mean_diff_3-1'].abs()
-    df_feats_new['score_mean_diff_abs_3-2'] = df_feats_new['score_mean_diff_3-2'].abs()
+    # df_feats_new['score_mean_diff_abs_3-1'] = df_feats_new['score_mean_diff_3-1'].abs()
+    # df_feats_new['score_mean_diff_abs_3-2'] = df_feats_new['score_mean_diff_3-2'].abs()
 
-    df_feats_new['score_z_diff_3-1'] = df_feats_new['score_z3'] - df_feats_new['score_z1']
-    df_feats_new['score_z_diff_3-2'] = df_feats_new['score_z3'] - df_feats_new['score_z2']
+    # df_feats_new['score_z_diff_3-1'] = df_feats_new['score_z3'] - df_feats_new['score_z1']
+    # df_feats_new['score_z_diff_3-2'] = df_feats_new['score_z3'] - df_feats_new['score_z2']
 
-    df_feats_new['score_z_div_3-1'] = df_feats_new['score_z3'] / df_feats_new['score_z1']
-    df_feats_new['score_z_div_3-2'] = df_feats_new['score_z3'] / df_feats_new['score_z2']
+    # df_feats_new['score_z_div_3-1'] = df_feats_new['score_z3'] / df_feats_new['score_z1']
+    # df_feats_new['score_z_div_3-2'] = df_feats_new['score_z3'] / df_feats_new['score_z2']
 
-    df_feats_new['score_z_diff_abs_3-1'] = df_feats_new['score_z_diff_3-1'].abs()
-    df_feats_new['score_z_diff_abs_3-2'] = df_feats_new['score_z_diff_3-2'].abs()
+    # df_feats_new['score_z_diff_abs_3-1'] = df_feats_new['score_z_diff_3-1'].abs()
+    # df_feats_new['score_z_diff_abs_3-2'] = df_feats_new['score_z_diff_3-2'].abs()
 
     # get preds
     ld_preds_new = []
@@ -557,7 +417,7 @@ def get_nice_df_preds(df_preds = None, metadata_cols = DF_PREDS_METADATA_COLS, a
     return odf[outcols]
 
 
-@HashStash('osp_df_preds_for_slices').stashed_result
+@STASH_DF_PREDS_FOR_SLICES.stashed_result
 def get_df_preds_for_slices(df_preds = None):
     if df_preds is None:
         df_preds, df_feats, d_models = get_preds_feats()
@@ -644,3 +504,25 @@ def get_nice_df_preds2(df_preds = None, metadata_cols = DF_PREDS_METADATA_COLS, 
         }
     )
     return odf
+
+
+def get_df_preds(*x,**y):
+    out = get_preds_feats(*x,**y)
+    return out[0]
+
+def get_df_feats(*x,**y):
+    out = get_preds_feats(*x,**y)
+    return out[1]
+
+def get_d_models(*x,**y):
+    y['return_models'] = True
+    out = get_preds_feats(*x,**y)
+    return out[2]
+
+@cache
+def get_current_pred_probs(target_col='discipline'):
+    df_preds = get_df_preds()
+    num_runs = df_preds['run'].nunique()
+    odf = df_preds.groupby(['predict_type','comparison','id']).mean(numeric_only=True).reset_index().drop(columns=['run'])
+    odf['target'] = odf['id'].map(lambda x: get_text_metadata(x).get(target_col,''))
+    return odf.sort_values('prob_Philosophy',ascending=False).set_index('id').assign(num_runs=num_runs)
