@@ -529,3 +529,13 @@ def get_sent_weights(doc, color_by='weight_z'):
         o.append(out_d)
     return pd.DataFrame(o)
     
+
+
+
+
+def get_syntax_df(sent):
+    dfx=get_clauses_v2(sent).sort_values('word_i')
+    dfx['clause_head'] = dfx['clause_head_id']-1
+    dfx = dfx.drop(columns=['clause_head_id'])
+    dfx['word_head_dist'] = (dfx['word_head'] - dfx['word_i']).abs()
+    return dfx

@@ -232,7 +232,7 @@ CLAUSE_DEPRELS = {
 }
 
 
-def get_clauses_v2(sent):
+def get_clauses_v2(sent, with_depth=True):
     """
     Extract clauses from a Stanza sentence using dependency parsing.
     
@@ -317,6 +317,31 @@ def get_clauses_v2(sent):
     for i in range(1, n + 1):
         word_to_clause[i] = find_clause_for_word(i)
     
+    # Calculate depth for each word (number of parents to reach root)
+    word_depth = {}
+    
+    def get_word_depth(word_id, visited=None):
+        """Calculate depth by counting steps to root."""
+        if visited is None:
+            visited = set()
+        
+        if word_id in word_depth:
+            return word_depth[word_id]
+        
+        if word_id in visited or word_id <= 0 or word_id > n:
+            return 0  # Cycle or invalid, treat as root
+        visited.add(word_id)
+        
+        head_id = words[word_id - 1].head
+        if head_id == 0:
+            # This is the root
+            return 0
+        
+        return 1 + get_word_depth(head_id, visited)
+    
+    for i in range(1, n + 1):
+        word_depth[i] = get_word_depth(i)
+    
     # Build output DataFrame
     rows = []
     last_clause_id = None
@@ -341,9 +366,199 @@ def get_clauses_v2(sent):
             'word_pos': word.xpos or word.upos,
             'word_deprel': word.deprel,
             'word_head': word.head,
+            'word_depth': word_depth.get(word_id, 0),
         })
     
-    return pd.DataFrame(rows)
+    odf = pd.DataFrame(rows)
+    if with_depth:
+        odf = add_clause_depth_to_df(odf)
+    return odf
+
+def get_clause_tree(sent):
+    """
+    Build a tree structure of clauses showing nesting relationships.
+    
+    Returns a dict mapping clause_id -> {
+        'type': 'main' or 'sub',
+        'head_word_id': word_id of clause head,
+        'deprel': the deprel introducing this clause,
+        'parent': parent clause_id or None,
+        'children': list of child clause_ids
+    }
+    
+    The parent-child relationship is determined by dependency structure:
+    - A clause's parent is the clause containing the governor of the clause head
+    """
+    df = get_clauses_v2(sent)
+    if df.empty:
+        return {}
+    
+    # Get unique clauses
+    clauses = {}
+    for cid in df['clause_id'].unique():
+        clause_df = df[df['clause_id'] == cid]
+        ctype = clause_df['clause_type'].iloc[0]
+        chead_id = clause_df['clause_head_id'].iloc[0]
+        cdeprel = clause_df['clause_deprel'].iloc[0]
+        clauses[cid] = {
+            'type': ctype,
+            'head_word_id': chead_id,
+            'deprel': cdeprel,
+            'parent': None,
+            'children': [],
+            'depth': 0
+        }
+    
+    # Build word_id -> clause_id mapping
+    word_to_clause = dict(zip(df['word_i'] + 1, df['clause_id']))  # word_i is 0-indexed, word_id is 1-indexed
+    
+    # Find parent for each clause
+    # The parent clause is the clause containing the governor (head) of the clause head word
+    for cid, clause in clauses.items():
+        head_word_id = clause['head_word_id']
+        
+        # Get the governor of the clause head
+        head_row = df[df['word_i'] == head_word_id - 1]
+        if head_row.empty:
+            continue
+        
+        governor_id = int(head_row['word_head'].iloc[0])
+        
+        if governor_id == 0:
+            # Clause head is the root, so this is a root clause
+            continue
+        
+        # Find which clause the governor belongs to
+        parent_cid = word_to_clause.get(governor_id)
+        if parent_cid is not None and parent_cid != cid:
+            clause['parent'] = parent_cid
+            clauses[parent_cid]['children'].append(cid)
+    
+    # Calculate depths (distance from root)
+    def set_depth(cid, depth):
+        clauses[cid]['depth'] = depth
+        for child_cid in clauses[cid]['children']:
+            set_depth(child_cid, depth + 1)
+    
+    # Find root clauses and set depths
+    for cid, clause in clauses.items():
+        if clause['parent'] is None:
+            set_depth(cid, 0)
+    
+    return clauses
+
+
+def render_clause_form(sent, use_deprel=False):
+    """
+    Render clause structure as a parenthesized string showing IC/DC nesting.
+    
+    Examples:
+        - Simple sentence: "IC"
+        - With one embedded clause: "IC(DC)"
+        - With nested clauses: "IC(DC(DC))"
+        - With multiple embedded clauses: "IC(DC)(DC)"
+        - Coordinate main clauses: "IC+IC"
+    
+    Args:
+        sent: Stanza sentence or string
+        use_deprel: If True, include deprel labels like "IC(advcl:DC)"
+    
+    Returns:
+        String representation of clause structure
+    """
+    clauses = get_clause_tree(sent)
+    if not clauses:
+        return ""
+    
+    def render_clause(cid):
+        clause = clauses[cid]
+        label = 'IC' if clause['type'] == 'main' else 'DC'
+        
+        if use_deprel and clause['deprel'] not in ('root', None):
+            label = f"{clause['deprel']}:{label}"
+        
+        children = clause['children']
+        if children:
+            # Sort children by their first word position for consistent output
+            sorted_children = sorted(children, key=lambda c: clauses[c]['head_word_id'])
+            child_strs = [render_clause(c) for c in sorted_children]
+            return f"{label}({')('.join(child_strs)})"
+        else:
+            return label
+    
+    # Find root clauses (no parent)
+    roots = [cid for cid, info in clauses.items() if info['parent'] is None]
+    roots_sorted = sorted(roots, key=lambda c: clauses[c]['head_word_id'])
+    
+    if len(roots_sorted) == 1:
+        return render_clause(roots_sorted[0])
+    else:
+        # Multiple root clauses (coordination, parataxis, etc.)
+        return '+'.join(render_clause(r) for r in roots_sorted)
+
+
+def add_clause_depth_to_df(df_clauses):
+    """
+    Add clause_depth column to a clause DataFrame.
+    
+    Clause depth is the nesting level:
+    - Root clause has depth 0
+    - Direct children have depth 1
+    - etc.
+    
+    This augments the output of get_clauses_v2.
+    """
+    if df_clauses.empty:
+        df_clauses['clause_depth'] = []
+        return df_clauses
+    
+    # Build clause tree to get depths
+    # We need the sentence to build the tree, but we only have the df
+    # So we'll compute depth from the parent relationship
+    
+    # Get unique clauses
+    clause_info = {}
+    for cid in df_clauses['clause_id'].unique():
+        clause_df = df_clauses[df_clauses['clause_id'] == cid]
+        chead_id = clause_df['clause_head_id'].iloc[0]
+        clause_info[cid] = {'head_id': chead_id, 'parent': None, 'depth': 0}
+    
+    # Build word_id -> clause_id mapping
+    word_to_clause = dict(zip(df_clauses['word_i'] + 1, df_clauses['clause_id']))
+    
+    # Find parent for each clause
+    for cid, info in clause_info.items():
+        head_word_id = info['head_id']
+        head_row = df_clauses[df_clauses['word_i'] == head_word_id - 1]
+        if head_row.empty:
+            continue
+        governor_id = int(head_row['word_head'].iloc[0])
+        if governor_id == 0:
+            continue
+        parent_cid = word_to_clause.get(governor_id)
+        if parent_cid is not None and parent_cid != cid:
+            info['parent'] = parent_cid
+    
+    # Calculate depths
+    def get_depth(cid, visited=None):
+        if visited is None:
+            visited = set()
+        if cid in visited:
+            return 0
+        visited.add(cid)
+        parent = clause_info[cid]['parent']
+        if parent is None:
+            return 0
+        return 1 + get_depth(parent, visited)
+    
+    for cid in clause_info:
+        clause_info[cid]['depth'] = get_depth(cid)
+    
+    # Map clause_id to depth
+    df_clauses = df_clauses.copy()
+    df_clauses['clause_depth'] = df_clauses['clause_id'].map(lambda c: clause_info[c]['depth'])
+    
+    return df_clauses
 
 
 def get_clauses_with_spans(sent):
@@ -453,3 +668,5 @@ def get_clause_nodes_from_constituency(sent):
     walk_tree(sent.constituency)
     return clauses
 
+def get_clause_form(sent):
+    return '(' + render_clause_form(sent) + ')'

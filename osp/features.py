@@ -115,7 +115,7 @@ def get_slice_feat_counts(id, bad_feats=None):
 
 
 # @cache
-def get_all_feats(normalize=True, feat_types=None, **kwargs):
+def get_all_feats(normalize=NORMALIZE_FEAT_DATA, feat_types=None, **kwargs):
     odf = get_all_feats_stashed()
     
     if feat_types:
@@ -139,6 +139,7 @@ def get_all_feats(normalize=True, feat_types=None, **kwargs):
 
 
 # @stashed_result
+@HashStash('osp_all_feats_stashed').stashed_result
 def get_all_feats_stashed():
     from .constants import STASH_SLICE_FEATS
     
@@ -170,68 +171,68 @@ def get_feat_counts(ids, normalize=True, renormalize=False, feat_types=CV_FEAT_T
     return df_slice_feats
 
 
-def extract_slice_feats(docstr, context_len=None, force=False, return_dict=True):
-    from .constants import CONTEXT_LEN, BAD_POS, BAD_DEPREL
-    from .nlp_utils import get_sent_stats, get_word_context
+# def extract_slice_feats(docstr, context_len=None, force=False, return_dict=True):
+#     from .constants import CONTEXT_LEN, BAD_POS, BAD_DEPREL
+#     from .nlp_utils import get_sent_stats, get_word_context
     
-    if context_len is None:
-        context_len = CONTEXT_LEN
+#     if context_len is None:
+#         context_len = CONTEXT_LEN
     
-    doc = stanza.Document.from_serialized(docstr) if isinstance(docstr, str) else docstr
-    if doc is None:
-        return {}
+#     doc = stanza.Document.from_serialized(docstr) if isinstance(docstr, str) else docstr
+#     if doc is None:
+#         return {}
 
-    o = []
-    allwords=[]
-    for sent_i, sent in enumerate(doc.sentences):
-        for word_i, word in enumerate(sent.words):
-            if word.pos in BAD_POS or word.deprel in BAD_DEPREL:
-                continue
-            allwords.append(word.text.lower())
-            sent_d = get_sent_stats(sent)
+#     o = []
+#     allwords=[]
+#     for sent_i, sent in enumerate(doc.sentences):
+#         for word_i, word in enumerate(sent.words):
+#             if word.pos in BAD_POS or word.deprel in BAD_DEPREL:
+#                 continue
+#             allwords.append(word.text.lower())
+#             sent_d = get_sent_stats(sent)
 
-            pos = word.xpos
-            deprel = word.deprel
-            eg_word = word.text.lower()
-            eg_context = get_word_context(doc, sent_i, word_i, context_len=context_len).strip()
+#             pos = word.xpos
+#             deprel = word.deprel
+#             eg_word = word.text.lower()
+#             eg_context = get_word_context(doc, sent_i, word_i, context_len=context_len).strip()
             
-            out_d = {
-                'sent_i': sent_i,
-                'word_i': word_i,
-                'word': eg_word,
-                'pos': pos,
-                'deprel': deprel,
-                'context': eg_context,
-                **{f'sent_{k}': v for k, v in sent_d.items() if k not in {'sent', 'num_words'}}
-            }
-            o.append(out_d)
-    df1 = pd.DataFrame(o)
-    if not return_dict:
-        return df1
+#             out_d = {
+#                 'sent_i': sent_i,
+#                 'word_i': word_i,
+#                 'word': eg_word,
+#                 'pos': pos,
+#                 'deprel': deprel,
+#                 'context': eg_context,
+#                 **{f'sent_{k}': v for k, v in sent_d.items() if k not in {'sent', 'num_words'}}
+#             }
+#             o.append(out_d)
+#     df1 = pd.DataFrame(o)
+#     if not return_dict:
+#         return df1
     
-    odx = df1.drop(columns=['sent_i', 'word_i']).mean(numeric_only=True)
-    orig_d = df1.drop(columns=['sent_i', 'word_i']).mean(numeric_only=True).to_dict()
-    pos_d = df1.pos.value_counts().to_dict()
-    deprel_d = df1.deprel.value_counts().to_dict()
-    ttr = len(set(allwords)) / len(allwords) * 1000
+#     odx = df1.drop(columns=['sent_i', 'word_i']).mean(numeric_only=True)
+#     orig_d = df1.drop(columns=['sent_i', 'word_i']).mean(numeric_only=True).to_dict()
+#     pos_d = df1.pos.value_counts().to_dict()
+#     deprel_d = df1.deprel.value_counts().to_dict()
+#     ttr = len(set(allwords)) / len(allwords) * 1000
 
-    allwords_recog = get_recog_words(allwords)
-    ttr_recog = len(set(allwords_recog)) / len(allwords_recog) * 1000
+#     allwords_recog = get_recog_words(allwords)
+#     ttr_recog = len(set(allwords_recog)) / len(allwords_recog) * 1000
 
-    num_recog_words = len(allwords_recog)
-    num_words = len(allwords)
-    perc_recog_words = num_recog_words / num_words * 1000
+#     num_recog_words = len(allwords_recog)
+#     num_words = len(allwords)
+#     perc_recog_words = num_recog_words / num_words * 1000
 
-    odx = {
-        **orig_d,
-        **{f'pos_{k}': (v/sum(pos_d.values()))*1000 for k, v in pos_d.items()},
-        **{f'deprel_{k}': (v/sum(deprel_d.values()))*1000 for k, v in deprel_d.items()},
-        'ttr_mean': ttr,
-        'ttr_recog': ttr_recog,
-        'num_words': num_words,
-        'num_recog_words': num_recog_words,
-    }
-    return odx
+#     odx = {
+#         **orig_d,
+#         **{f'pos_{k}': (v/sum(pos_d.values()))*1000 for k, v in pos_d.items()},
+#         **{f'deprel_{k}': (v/sum(deprel_d.values()))*1000 for k, v in deprel_d.items()},
+#         'ttr_mean': ttr,
+#         'ttr_recog': ttr_recog,
+#         'num_words': num_words,
+#         'num_recog_words': num_recog_words,
+#     }
+#     return odx
 
 # @stashed_result
 def get_mdw_feats(groups_train, feat_n=10, feat_n_egs=5, **kwargs):
@@ -374,12 +375,16 @@ def get_current_feat_weights(*args,group_by=('feature',), **kwargs):
     odf['weight_z'] = (odf['weight'] - odf['weight'].mean()) / odf['weight'].std()
     return odf
 
-
+@cache
+@HashStash('osp_parsed_slice_ids').stashed_result
+def get_parsed_slice_ids():
+    return list(STASH_SLICES_NLP.keys())
 
 def gen_all_slice_feats(force=False, batch_n=100, num_proc=1):
     ids = get_parsed_slice_ids()
     if not force:
-        ids_not_done = [id for id in ids if id not in STASH_SLICE_FEATS]
+        ids_done = set(STASH_SLICE_FEATS.keys())
+        ids_not_done = [id for id in ids if id not in ids_done]
         if len(ids_not_done) == 0:
             return
         ids = ids_not_done
@@ -388,17 +393,18 @@ def gen_all_slice_feats(force=False, batch_n=100, num_proc=1):
         batch_ids = ids[batch_i:batch_i+batch_n]
         batch_docstrs = [STASH_SLICES_NLP[id] for id in batch_ids]
 
-        with mp.Pool(num_proc) as pool:
-            iterr = pool.imap(_do_gen_all_slice_feats, batch_docstrs)
-            for id,res in zip(batch_ids,iterr):
+        if num_proc > 1:
+            with mp.Pool(num_proc) as pool:
+                iterr = pool.imap(_do_gen_all_slice_feats, batch_docstrs)
+                for id,res in zip(batch_ids,iterr):
+                    STASH_SLICE_FEATS[id] = res
+        else:
+            for id,docstr in zip(batch_ids,batch_docstrs):
+                res = extract_slice_feats(docstr)
                 STASH_SLICE_FEATS[id] = res
 
 def _do_gen_all_slice_feats(docstr):
-    try:
-        return extract_slice_feats(docstr)
-    except Exception as e:
-        print(f'!! {e}')
-        return None
+    return extract_slice_feats(docstr)
 
 def get_nice_df_feats(df_feats=None):
     if df_feats is None:
@@ -524,3 +530,172 @@ def get_slice_feats_by_word(doc, weight_cols = ['weight','score_mean1','score_me
     odf_slice_feats = odf_slice_feats.merge(df_feat_weights[weight_cols], on='feature', how='left').dropna()
     odf_slice_feats['feat_type'] = odf_slice_feats.feature.str.split('_').str[0]
     return odf_slice_feats
+
+
+
+def extract_pos_feats_sent(sent):
+    counter = Counter()
+    for word in sent.words:
+        pos = word.xpos
+        if pos not in BAD_POS and pos and pos[0].isalpha():
+            counter[pos] += 1
+    return counter
+
+def extract_pos_feats(doc):
+    counter = Counter()
+    for sent in doc.sentences:
+        sent_pos_feats = extract_pos_feats_sent(sent)
+        for pos,count in sent_pos_feats.items():
+            counter[pos] += count
+    return counter
+
+
+def extract_deprel_feats_sent(sent):
+    counter = Counter()
+    for word in sent.words:
+        deprel = word.deprel
+        if deprel not in BAD_DEPREL:
+            counter[deprel] += 1
+    return counter
+
+def extract_deprel_feats(doc):
+    counter = Counter()
+    for sent in doc.sentences:
+        sent_deprel_feats = extract_deprel_feats_sent(sent)
+        for deprel,count in sent_deprel_feats.items():
+            counter[deprel] += count
+    return counter
+
+def get_node_path_to_root(tree):
+    path = []
+    while node.parent is not None:
+        path.append(node.parent)
+        node = node.parent
+    return path
+
+def extract_phrase_feats_sent(sent):
+    counter = Counter()
+    tree = get_sent_tree(sent)
+    for node in tree.subtrees():
+        label = node.label()
+        if label.isalpha() and label not in POS2DESC:
+            counter[label] += 1
+    return counter
+
+def extract_phrase_feats(doc):
+    counter = Counter()
+    for sent in doc.sentences:
+        sent_phrase_feats = extract_phrase_feats_sent(sent)
+        for phrase,count in sent_phrase_feats.items():
+            counter[phrase] += count
+    return counter
+
+
+
+
+def extract_ttr_feats(doc, within_pos = ["NOUN","ADJ","VERB","ADV"], max_tokens=1000,normalize=True):
+    counter = Counter()
+    pos2counter = defaultdict(Counter)
+    ntok=-1
+    for sent in doc.sentences:
+        for word in sent.words:
+            ntok += 1
+            pos = word.pos
+            #if pos and pos[0].isalpha() and pos != 'PUNCT':
+            if pos not in within_pos:
+                pos = 'OTHER'
+            tok = word.text.lower()
+            pos2counter[pos][tok] += 1
+            counter[tok] += 1
+            if ntok > max_tokens:
+                break
+        if ntok > max_tokens:
+            break
+    
+    def d2ttr(d):
+        num_types = len(d)
+        num_tokens = sum(d.values())
+        if not normalize:
+            return num_types
+        return num_types / num_tokens if num_tokens > 0 else np.nan
+
+    out_d = {
+        'mean': d2ttr(counter),
+        **{
+            f'{pos}': d2ttr(pos2counter[pos])
+            for pos in pos2counter
+        }
+    }
+    return out_d
+
+
+
+
+def extract_syntax_feats_sent(sent, incl_formula=True, max_n_clauses=3):
+    from .sentences import get_syntax_df
+    from .nlp_utils import get_clause_form
+
+    df = get_syntax_df(sent)
+    # df_clause = df.drop_duplicates('clause_id')
+    # clause_type_counts = df_clause.groupby('clause_type').size()
+    # num_ic = int(clause_type_counts.get('main',0))
+    # num_dc = int(clause_type_counts.get('sub',0))
+
+    clause_form = get_clause_form(sent)
+    num_ic = clause_form.count('IC')
+    num_dc = clause_form.count('DC')
+    num_c = num_ic + num_dc
+    # num_c = len(clause_form.split('(')) - 1
+    # num_c_star = len(clause_form.split('('))
+
+    
+    out_d = {}
+    out_d['IC']=num_ic
+    out_d['DC']=num_dc
+    # out_d['C']=df.clause_id.nunique()
+    # out_d['C*']=df.clause_i.nunique()
+
+    df_words = df#[df.word_deprel!='punct']
+    # out_d['DCw']=len(df_words[df_words.clause_type=='sub'])
+    # out_d['ICw']=len(df_words[df_words.clause_type=='main'])
+
+    avg_s = df.max(numeric_only=True)
+    out_d['Wd'] = int(avg_s['word_depth'])
+    out_d['Cd'] = int(avg_s['clause_depth'])
+
+    if num_c < max_n_clauses:
+        out_d[clause_form]=1
+        # out_d[f'{clause_form}w']=len(df)
+    
+    return out_d
+
+def extract_syntax_feats(doc):
+    df = pd.DataFrame([extract_syntax_feats_sent(sent) for sent in doc.sentences])
+    return {k:int(v) for k,v in df.sum(numeric_only=True).items()}
+
+
+def extract_slice_feats(docstr, normalize=True):
+    doc = stanza.Document.from_serialized(docstr) if isinstance(docstr, (str,bytes)) else docstr
+    if doc is None:
+        return {}
+
+    feats_d = {}
+    feats_d['pos'] = extract_pos_feats(doc)
+    feats_d['deprel'] = extract_deprel_feats(doc)
+    feats_d['phrase'] = extract_phrase_feats(doc)
+    feats_d['ttr'] = extract_ttr_feats(doc,normalize=normalize)
+    feats_d['sent'] = extract_syntax_feats(doc)
+    
+    out_d = {
+        **{'pos_'+k: v for k,v in feats_d['pos'].items()},
+        **{'deprel_'+k: v for k,v in feats_d['deprel'].items()},
+        **{'phrase_'+k: v for k,v in feats_d['phrase'].items()},
+        **{'ttr_'+k: v for k,v in feats_d['ttr'].items()},
+        **{'sent_'+k: v for k,v in extract_syntax_feats(doc).items()},
+    }
+
+    if normalize:
+        num_words = sum(len(sent.words) for sent in doc.sentences)
+        for k,v in out_d.items():
+            out_d[k] = v / num_words * 1000
+    return out_d

@@ -98,3 +98,61 @@ def get_text_slice_ids(id, n_slices=10):
         for slice_id in range(1,n_slices+1)
         if f'{id}__{slice_id:02d}' in STASH_SLICES_NLP
     ]
+
+import itertools
+
+@HashStash('osp_all_text_slice_ids').stashed_result
+def get_all_text_slice_ids(lim=None):
+    iterr = STASH_SLICES.items()
+    iterr = itertools.islice(iterr,lim)
+    iterr = tqdm(iterr,total=lim if lim is not None else len(STASH_SLICES))
+    return [
+        f'{text_id}__{int(slice_id):02d}'
+        for text_id,d in iterr
+        for slice_id in d.keys()
+    ]
+
+@cache
+def get_text_id2slice_ids():
+    from .features import get_parsed_slice_ids
+    out = defaultdict(list)
+    for k in get_parsed_slice_ids():
+        out[k.split('__')[0]].append(k)
+    return out
+
+
+def get_balanced_slice_sample(groups_train, sample_size=None, verbose=True):
+    name1, query1 = groups_train[0]
+    name2, query2 = groups_train[1]
+
+    df_meta = get_corpus_metadata()
+    df_meta_g1 = df_meta.query(query1)
+    df_meta_g2 = df_meta.query(query2)
+    if not len(df_meta_g1) or not len(df_meta_g2):
+        return pd.DataFrame()
+
+
+    text2slice_ids = get_text_id2slice_ids()
+    slice_ids_g1 = [slice_id for text_id in df_meta_g1.index for slice_id in text2slice_ids[text_id]]
+    slice_ids_g2 = [slice_id for text_id in df_meta_g2.index for slice_id in text2slice_ids[text_id]]
+
+    min_size = min(len(slice_ids_g1), len(slice_ids_g2))
+    if sample_size is None or sample_size > min_size:
+        sample_size = min_size
+
+    slice_ids_g1 = random.sample(slice_ids_g1, sample_size)
+    slice_ids_g2 = random.sample(slice_ids_g2, sample_size)
+
+    df_slice_ids_g1 = pd.DataFrame(slice_ids_g1, columns=['slice_id']).assign(_target=name1)
+    df_slice_ids_g2 = pd.DataFrame(slice_ids_g2, columns=['slice_id']).assign(_target=name2)
+    
+    df_slice_ids = pd.concat([df_slice_ids_g1, df_slice_ids_g2])
+    df_slice_ids['text_id'] = df_slice_ids.slice_id.str.split('__').str[0]
+    df_slice_ids = df_slice_ids[['text_id', 'slice_id','_target']]
+    # df_meta is indexed by text_id; merge on index to preserve metadata columns.
+    odf = df_meta[DF_PREDS_METADATA_COLS].merge(
+        df_slice_ids, left_index=True, right_on='text_id', how='right'
+    )
+    
+    return odf
+    
