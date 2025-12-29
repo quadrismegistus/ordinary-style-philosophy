@@ -152,6 +152,7 @@ def classify_then_predict_group(
     verbose=False,
     return_models=False,
     normalize=NORMALIZE_CLASSIFY_DATA,
+    also_predict_unseen=True,
     **kwargs,
 ):
     from .features import get_balanced_cv_data, get_mdw_feats
@@ -165,7 +166,6 @@ def classify_then_predict_group(
         )
         hdrs = [c for c in df_scores.columns if c and c != "_target" and c[0] == "_"]
         df_scores_target = df_scores.query('_type=="CV"').drop(columns=hdrs)
-        df_scores_unseen = df_scores.query('_type=="Unseen"').drop(columns=hdrs)
 
         cv_preds, cv_feats, cv_model = classify_data(
             df_scores_target,
@@ -175,27 +175,33 @@ def classify_then_predict_group(
             **kwargs,
         )
 
-        new_target = df_scores_unseen._target.tolist()
-        new_probs = cv_model.predict_proba(df_scores_unseen.drop(columns=["_target"]))
-        df_new_probs = pd.DataFrame(new_probs)
-        df_new_probs.columns = [f'prob_{x}' for x in cv_model.classes_]
-        # df_new_probs["pred_label"] = df_new_probs.idxmax(axis=1)[:5] # max prob class
-        # df_new_probs["true_label"] = new_target
-        # df_new_probs["correct"] = (
-        #     df_new_probs["pred_label"] == df_new_probs["true_label"]
-        # ).apply(int)
-        # df_new_probs["test_label"] = " / ".join(cv_model.classes_)
-        df_new_probs['support'] = len(df_scores_target)
-        df_new_probs["id"] = df_scores_unseen.index
-        df_new_probs.set_index("id", inplace=True)
-        # df_new_probs
+        if also_predict_unseen:
+            df_scores_unseen = df_scores.query('_type=="Unseen"').drop(columns=hdrs)
 
-        df_out_probs = pd.concat(
-            [
-                cv_preds.assign(run=nrun, predict_type="cv"),
-                df_new_probs.assign(run=nrun, predict_type="unseen"),
-            ]
-        )
+
+            new_target = df_scores_unseen._target.tolist()
+            new_probs = cv_model.predict_proba(df_scores_unseen.drop(columns=["_target"]))
+            df_new_probs = pd.DataFrame(new_probs)
+            df_new_probs.columns = [f'prob_{x}' for x in cv_model.classes_]
+            # df_new_probs["pred_label"] = df_new_probs.idxmax(axis=1)[:5] # max prob class
+            # df_new_probs["true_label"] = new_target
+            # df_new_probs["correct"] = (
+            #     df_new_probs["pred_label"] == df_new_probs["true_label"]
+            # ).apply(int)
+            # df_new_probs["test_label"] = " / ".join(cv_model.classes_)
+            df_new_probs['support'] = len(df_scores_target)
+            df_new_probs["id"] = df_scores_unseen.index
+            df_new_probs.set_index("id", inplace=True)
+            # df_new_probs
+
+            df_out_probs = pd.concat(
+                [
+                    cv_preds.assign(run=nrun, predict_type="cv"),
+                    df_new_probs.assign(run=nrun, predict_type="unseen"),
+                ]
+            )
+        else:
+            df_out_probs = cv_preds.assign(run=nrun, predict_type="cv")
         l_preds.append(df_out_probs)
         l_feats.append(cv_feats.assign(run=nrun))
         l_models.append(cv_model)
@@ -219,6 +225,62 @@ def classify_then_predict_group(
     # df_feats = df_feats.merge(df_mdw, on="feature", how="left")
     # df_feats['group1'],df_feats['group2'] = zip(*df_feats['comparison'].str.split(' vs '))
     return (df_preds, df_feats) if not return_models else (df_preds, df_feats, l_models)
+
+
+@STASH_CUSTOM_PREDS.stashed_result
+def classify_custom_comparison(
+    group1_name: str,
+    group1_query: str,
+    group2_name: str,
+    group2_query: str,
+    num_runs: int = 10,
+    sample_size: int = 1000,
+    balance: bool = True,
+    replace: bool = False,
+    cv: int = 10,
+    normalize: bool = True,
+):
+    """
+    Stashed wrapper for classify_then_predict_group.
+    Uses string parameters for reliable cache keys.
+    Returns (df_preds, df_feats) as dictionaries for JSON serialization.
+    """
+    groups_train = [
+        (group1_name, group1_query),
+        (group2_name, group2_query),
+    ]
+    
+    df_preds, df_feats = classify_then_predict_group(
+        groups_train,
+        target_col='discipline',
+        balance=balance,
+        num_runs=num_runs,
+        verbose=True,
+        return_models=False,
+        normalize=normalize,
+        sample_size=sample_size,
+        cv=cv,
+        replace=replace,
+    )
+    
+    # Convert to dict for JSON serialization in stash
+    return {
+        'preds': df_preds.reset_index().to_dict(orient='records'),
+        'preds_index': df_preds.index.name or 'index',
+        'feats': df_feats.to_dict(orient='records'),
+    }
+
+
+def load_custom_comparison_results(result_dict):
+    """Convert stashed result dict back to DataFrames."""
+    df_preds = pd.DataFrame(result_dict['preds'])
+    if result_dict['preds_index'] and result_dict['preds_index'] in df_preds.columns:
+        df_preds = df_preds.set_index(result_dict['preds_index'])
+    elif 'id' in df_preds.columns:
+        df_preds = df_preds.set_index('id')
+    
+    df_feats = pd.DataFrame(result_dict['feats'])
+    return df_preds, df_feats
 
 
 def classify_then_predict_comparisons(

@@ -94,6 +94,8 @@ STASH_FEAT_EXAMPLES2 = get_stash('osp_feat_examples2')
 STASH_FEAT_EG_CACHE = get_stash('osp_feat_eg_cache')
 STASH_DASHBOARD_GROUPS = get_stash('osp_dashboard_groups')
 STASH_DASHBOARD_COMPARISONS = get_stash('osp_dashboard_comparisons')
+STASH_DASHBOARD_STATE = get_stash('osp_dashboard_state')
+STASH_CUSTOM_PREDS = get_stash('osp_custom_preds')
 
 from logmap import logmap
 
@@ -357,6 +359,9 @@ COMPARISONS = [
         ('2000-2025 Philosophy', 'discipline=="Philosophy" & 2000<=year<2025'),
         ('2000-2025 Literature', 'discipline=="Literature" & 2000<=year<2025'),
     ),
+
+    # ('Philosophy', 'discipline=="Philosophy"'),
+    # ('Literature', 'discipline=="Literature"'),
 ]
 GROUPS_TRAIN = COMPARISONS[0]
 
@@ -481,3 +486,9 @@ DISPLAY_META_FIELDS = [
     "url",
     "publisher",
 ]
+
+NUM_DISTINCTIVE_FEATS = 25
+EG_TXT_WINDOW = 60
+EG_TXT_WINDOW_LEFT = 25
+EG_TXT_WINDOW_RIGHT = 35
+EG_NUM_EG = 25

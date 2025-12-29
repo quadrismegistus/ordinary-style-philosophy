@@ -282,8 +282,8 @@ def get_sent_html(
         else:
             min_score, max_score = 0, 0
 
-    # sent_html = ['<ul style="font-family: \'Source Sans\', sans-serif;">']
-    sent_html = ['<ul style="font-family: \'Source Sans\', sans-serif; list-style-type: none;">']
+    sent_html = ['<ul style="font-family: \'Source Sans\', sans-serif;">']
+    # sent_html = ['<ul style="font-family: \'Source Sans\', sans-serif; list-style-type: none;">']
 
     clause_df = get_syntax_df(sent)
     word_id2clause_id = dict(zip(clause_df["word_i"] + 1, clause_df["clause_id"]))
@@ -367,8 +367,8 @@ def get_sent_html(
                 sent_html.append('<ul>')
             elif this_clause_depth < last_clause_depth:
                 sent_html.append('</ul>')
-            sent_html.append(f'<li style="clear: both; font-family: \'Source Sans\', sans-serif; list-style-type: none;">')
-            # sent_html.append(f'<li style="clear: both; font-family: \'Source Sans\', sans-serif;"><span style="margin-right: 5px; float: left; color:gray;">{this_clause_type} d{this_clause_depth}:</span>')
+            # sent_html.append(f'<li style="clear: both; font-family: \'Source Sans\', sans-serif; list-style-type: none;">')
+            sent_html.append(f'<li style="clear: both; font-family: \'Source Sans\', sans-serif;"><span style="margin-right: 5px; float: left; color:lightgray;">{this_clause_type}d{this_clause_depth}:</span>')
             last_clause_id = this_clause_id
         sent_html.append(word_span)
     sent_html.append(f'</li></ul>')

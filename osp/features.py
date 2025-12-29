@@ -138,7 +138,7 @@ def get_all_feats(normalize=NORMALIZE_FEAT_DATA, feat_types=None, **kwargs):
     return odf[[c for c in odf.columns if c not in BAD_SLICE_FEATS]]
 
 
-# @stashed_result
+@cache
 @STASH_ALL_FEATS.stashed_result
 def get_all_feats_stashed():
     from .constants import STASH_SLICE_FEATS
@@ -275,6 +275,7 @@ def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, no
     from .slices import get_balanced_slice_sample, get_text_id2slice_ids
 
     sample_size = kwargs.pop("sample_size", None)
+    replace = kwargs.pop("replace", False)
 
     df_meta = get_corpus_metadata()
     name1, query1 = groups_train[0]
@@ -288,7 +289,7 @@ def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, no
 
     if balance:
         df_slice_sample = get_balanced_slice_sample(
-            groups_train, sample_size=sample_size, verbose=False
+            groups_train, sample_size=sample_size, replace=replace, verbose=False
         )
         if not df_slice_sample.empty and "slice_id" in df_slice_sample.columns:
             slice_ids_g1 = (
@@ -298,6 +299,7 @@ def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, no
                 df_slice_sample.query("_target==@name2")["slice_id"].astype(str).tolist()
             )
     else:
+        from .slices import _sample_ids
         df_meta1 = df_meta.query(query1)
         df_meta2 = df_meta.query(query2)
         text2slice_ids = get_text_id2slice_ids()
@@ -314,16 +316,8 @@ def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, no
         if sample_size is not None:
             sample_size = int(sample_size)
             if sample_size > 0:
-                slice_ids_g1 = (
-                    random.sample(slice_ids_g1, min(sample_size, len(slice_ids_g1)))
-                    if slice_ids_g1
-                    else []
-                )
-                slice_ids_g2 = (
-                    random.sample(slice_ids_g2, min(sample_size, len(slice_ids_g2)))
-                    if slice_ids_g2
-                    else []
-                )
+                slice_ids_g1 = _sample_ids(slice_ids_g1, sample_size=sample_size, replace=replace)
+                slice_ids_g2 = _sample_ids(slice_ids_g2, sample_size=sample_size, replace=replace)
 
     # Keep only slice ids that we actually have features for
     idx_all = set(df_scores_all.index.astype(str))
@@ -333,20 +327,35 @@ def get_balanced_cv_data(groups_train, target_col='discipline', balance=True, no
     df_scores1 = df_scores_all.loc[slice_ids_g1].copy() if slice_ids_g1 else df_scores_all.iloc[0:0].copy()
     df_scores2 = df_scores_all.loc[slice_ids_g2].copy() if slice_ids_g2 else df_scores_all.iloc[0:0].copy()
 
-    # Attach target labels (discipline, etc.) per slice id
-    for dfx in [df_scores_all, df_scores1, df_scores2]:
-        dfx["_target"] = [get_text_metadata(i).get(target_col, "") for i in dfx.index]
-        dfx.dropna(subset=["_target"], inplace=True)
-
-    # Attach CV group labels
-    df_scores1 = df_scores1.assign(_group=name1)
-    df_scores2 = df_scores2.assign(_group=name2)
+    # Attach group labels and use group name as target for CV samples
+    # This allows comparing groups within the same discipline (e.g., Philosophy 1900 vs Philosophy 2000)
+    df_scores1 = df_scores1.assign(_group=name1, _target=name1)
+    df_scores2 = df_scores2.assign(_group=name2, _target=name2)
 
     df_scores_cv = pd.concat([df_scores1, df_scores2]).assign(_type="CV")
-    df_scores_rest = (
-        df_scores_all.drop(df_scores_cv.index, errors="ignore")
-        .assign(_type="Unseen", _group="Unseen")
-    )
+    
+    # For unseen samples, determine target based on which group query they match
+    # (use metadata lookup as fallback for backward compatibility)
+    df_scores_rest = df_scores_all.drop(df_scores_cv.index, errors="ignore").copy()
+    if not df_scores_rest.empty:
+        # Try to assign target based on matching group queries
+        rest_text_ids = [str(idx).split('__')[0] for idx in df_scores_rest.index]
+        df_meta1_ids = set(df_meta.query(query1).index) if query1 else set()
+        df_meta2_ids = set(df_meta.query(query2).index) if query2 else set()
+        
+        def get_unseen_target(text_id):
+            if text_id in df_meta1_ids:
+                return name1
+            elif text_id in df_meta2_ids:
+                return name2
+            else:
+                # Fallback to metadata column
+                return get_text_metadata(text_id).get(target_col, "Unknown")
+        
+        df_scores_rest["_target"] = [get_unseen_target(tid) for tid in rest_text_ids]
+        df_scores_rest["_group"] = "Unseen"
+        df_scores_rest["_type"] = "Unseen"
+    
     return pd.concat([df_scores_cv, df_scores_rest])
 
 
@@ -947,8 +956,10 @@ def get_feat_group_egs(feats, groups=None, num_egs=10):
     return pd.concat([odf1.assign(group=name1), odf2.assign(group=name2)])
 
 
-@STASH_FEAT_EG_CACHE.stashed_result
-def get_slice_feat_egs(slice_ids=None, feats=None, num_egs=10, max_slices=1000):
+# @STASH_FEAT_EG_CACHE.stashed_result
+def get_slice_feat_egs(slice_ids=None, feats=None, num_egs=5, max_slices=1000):
+    print('get slice feat egs')
+    now = time.time()
     if slice_ids is None:
         slice_ids = get_parsed_slice_ids()
     if isinstance(feats, str):
@@ -971,4 +982,6 @@ def get_slice_feat_egs(slice_ids=None, feats=None, num_egs=10, max_slices=1000):
                 if (not feats or feat in set(feats)) and len(egs[feat]) < num_egs:
                     d['slice_id'] = slice_id
                     egs[feat].append(d)
+
+    print(f'get slice feat egs done in {time.time() - now:.2f} seconds')
     return pd.DataFrame([vx for vl in egs.values() for vx in vl]).sample(frac=1)

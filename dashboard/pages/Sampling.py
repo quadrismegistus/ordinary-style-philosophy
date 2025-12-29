@@ -13,16 +13,21 @@ import pandas as pd
 from datetime import datetime
 from collections import Counter
 import plotly.express as px
-from streamlit_local_storage import LocalStorage
 from utils import *
 from osp import (
     STASH_DASHBOARD_GROUPS,
     STASH_DASHBOARD_COMPARISONS,
+    STASH_DASHBOARD_STATE,
     COMPARISONS,
 )
 
 st.set_page_config(page_title="Classification", layout="wide")
-ls = LocalStorage()
+
+# 1. Retrieve choices
+last_group_a = get_current_group_a()
+last_group_b = get_current_group_b()
+last_comp_name = get_current_comparison_name()
+# saved_data = ls.getItem("osp_comparison_groups", key="get_comp_groups_sampling")
 
 
 
@@ -101,14 +106,18 @@ def _seed_comparisons_from_constants(df_meta: pd.DataFrame):
     return seeded
 
 
-def select_saved_group(title: str, key_prefix: str, saved_groups: dict):
+def select_saved_group(title: str, key_prefix: str, saved_groups: dict, default_name: str = None):
     # st.subheader(title)
     names = sorted(saved_groups.keys())
     if not names:
         st.info("No saved groups found. Create one on the Groups page.")
         return "", {}, ""
 
-    default_index = 0 if key_prefix == "grp_a" else (1 if len(names) > 1 else 0)
+    if default_name and default_name in names:
+        default_index = names.index(default_name)
+    else:
+        default_index = 0 if key_prefix == "grp_a" else (1 if len(names) > 1 else 0)
+    
     selected_name = st.selectbox(
         title,
         options=names,
@@ -252,15 +261,40 @@ def load_slice_sample(
 
 
 with right:
-    name_a, query_a_struct, query_a_str = select_saved_group("Group 1", "grp_a", saved_groups)
-    name_b, query_b_struct, query_b_str = select_saved_group("Group 2", "grp_b", saved_groups)
+    saved_comparisons = _load_saved_comparisons()
+    saved_comp_names = sorted(saved_comparisons.keys())
+    selected_saved_comp = st.selectbox(
+        "Saved comparisons (HashStash)",
+        options=[""] + saved_comp_names,
+        format_func=lambda x: x or "Select saved comparison",
+    )
+
+    if selected_saved_comp:
+        comp = saved_comparisons.get(selected_saved_comp, {}) or {}
+        ga = comp.get("group_a", {}) or {}
+        gb = comp.get("group_b", {}) or {}
+        name_a = ga.get("name") or "Group 1"
+        name_b = gb.get("name") or "Group 2"
+        query_a_str = ga.get("query_str") or ""
+        query_b_str = gb.get("query_str") or ""
+        query_a_struct = ga.get("query_struct", {}) if isinstance(ga, dict) else {}
+        query_b_struct = gb.get("query_struct", {}) if isinstance(gb, dict) else {}
+    else:
+        name_a, query_a_struct, query_a_str = select_saved_group("Group 1", "grp_a", saved_groups, default_name=last_group_a)
+        name_b, query_b_struct, query_b_str = select_saved_group("Group 2", "grp_b", saved_groups, default_name=last_group_b)
     label_a = name_a or "Group 1"
     label_b = name_b or "Group 2"
     comparison_name = st.text_input(
         "Comparison name",
-        value=f"{label_a} vs {label_b}",
+        value=last_comp_name if last_comp_name else f"{label_a} vs {label_b}",
         help="Name to save this comparison in HashStash.",
     )
+    
+    # Auto-track last chosen groups and comparison name
+    set_current_group_a(label_a)
+    set_current_group_b(label_b)
+    if comparison_name != last_comp_name:
+        set_current_comparison(comparison_name)
 
     # if st.button("Seed default comparisons (from constants)", use_container_width=True):
     #     try:
@@ -308,10 +342,10 @@ if save:
     }
     try:
         _save_comparison(saved_data["name"], saved_data)
+        set_current_comparison(saved_data["name"], saved_data)
         st.success(f"Comparison '{saved_data['name']}' saved to HashStash.")
     except Exception as e:
         st.error(f"Could not save comparison: {e}")
-    ls.setItem("osp_comparison_groups", saved_data)
 
 if submit:
     try:
@@ -492,6 +526,11 @@ if run_data:
                 f"Query B: {comp.get('group_b', {}).get('query_str')}\n\n"
                 f"Saved at: {comp.get('saved_at')}"
             )
+            if st.button("Delete comparison", type="secondary"):
+                if selected_comp in STASH_DASHBOARD_COMPARISONS:
+                    del STASH_DASHBOARD_COMPARISONS[selected_comp]
+                    st.success(f"Deleted comparison '{selected_comp}'.")
+                    st.rerun()
 
     def fmt_int(x):
         try:

@@ -1,21 +1,16 @@
-import streamlit as st
 import sys, os
-import pandas as pd
-import stanza
-
-# Setup paths to import 'osp'
-PATH_HERE = os.path.dirname(os.path.abspath(__file__))
-PATH_DASHBOARD = os.path.dirname(PATH_HERE)
-PATH_REPO = os.path.dirname(PATH_DASHBOARD)
-if PATH_REPO not in sys.path:
-    sys.path.append(PATH_REPO)
-
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from osp import *
-from osp.constants import STASH_SLICES_NLP
-from osp.sentences import render_sent_displacy, get_sent_html
-from osp.nlp_utils import get_sent_tree_full, get_nlp_doc
+from utils import *
+
+import streamlit as st
 
 st.set_page_config(layout="wide", page_title="Sentence Analysis")
+
+# 1. Retrieve last choice
+last_slice_id = STASH_DASHBOARD_STATE.get("osp_last_slice_id")
+last_sent_id = STASH_DASHBOARD_STATE.get("osp_last_sent_id")
+st.title("Sentence")
 
 # Helper to get svgling if available
 try:
@@ -30,8 +25,8 @@ def get_sentence_from_params():
     doc = None
     sent_idx = 0
     
-    if "slice_id" in params:
-        slice_id = params["slice_id"]
+    slice_id = params.get("slice_id") or last_slice_id
+    if slice_id:
         if slice_id in STASH_SLICES_NLP:
             docstr = STASH_SLICES_NLP[slice_id]
             doc = stanza.Document.from_serialized(docstr)
@@ -39,10 +34,11 @@ def get_sentence_from_params():
             st.error(f"Slice ID {slice_id} not found in stash.")
             return None, None
             
-        if "sent_id" in params:
+        sent_id = params.get("sent_id") or last_sent_id
+        if sent_id:
             try:
                 # Assuming 1-indexed from user/URL
-                sent_idx = int(params["sent_id"]) - 1
+                sent_idx = int(sent_id) - 1
             except ValueError:
                 sent_idx = 0
     
@@ -53,23 +49,27 @@ def get_sentence_from_params():
         
     return doc, sent_idx
 
-doc, sent_idx = get_sentence_from_params()
+status_window = get_status_window()
+with log_progress("Getting sentence from params"):
+    doc, sent_idx = get_sentence_from_params()
 
 if not doc or not sent_idx:
-    doc = get_random_doc()
+    with log_progress("Getting random sentence"):
+        doc = get_random_doc()
     sent_idx = random.randint(0, len(doc.sentences) - 1)
 
 
 if doc and 0 <= sent_idx < len(doc.sentences):
     sent = doc.sentences[sent_idx]
     
-    st.title("Sentence Analysis")
+    # st.title("Sentence Analysis")
     
     # 1. Display plain text
     st.markdown(f'<blockquote><span style="font-size: 1.5em; font-family: Baskerville;">{sent.text}</span></blockquote>', unsafe_allow_html=True)
 
     color_options = ["weight_z", "weight", "score_z_diff", "pos", "deprel"]
-    color_column = st.sidebar.selectbox("Color by:", color_options, index=0)
+    # color_column = st.sidebar.selectbox("Color by:", color_options, index=0)
+    color_column = color_options[0]  # Default to first option
 
     # 4. Sentence HTML (Annotated)
     word_id = st.query_params.get("word_id")
@@ -78,17 +78,25 @@ if doc and 0 <= sent_idx < len(doc.sentences):
             word_id = int(word_id)
         except ValueError:
             word_id = None
-            
-    sent_html = get_sent_html(sent, color=color_column, highlight_word_id=word_id)
+    
+    with log_progress("Getting sentence HTML"), st.spinner("Getting sentence HTML"):
+        sent_html = get_sent_html(sent, color=color_column, highlight_word_id=word_id)
+    
     st.markdown(sent_html, unsafe_allow_html=True)
     
-    # col1, col2 = st.columns(2)
+    # Auto-track last viewed sentence
+    slice_id = st.query_params.get("slice_id")
+    sent_id = st.query_params.get("sent_id")
+    if slice_id and st.session_state.get("last_viewed_slice_id") != slice_id:
+        st.session_state["last_viewed_slice_id"] = slice_id
+        STASH_DASHBOARD_STATE["osp_last_slice_id"] = slice_id
+    if sent_id and st.session_state.get("last_viewed_sent_id") != sent_id:
+        st.session_state["last_viewed_sent_id"] = sent_id
+        STASH_DASHBOARD_STATE["osp_last_sent_id"] = sent_id
     
-
     # 2. Dependency Tree (displacy SVG)
     st.subheader("Dependency relations")
     # Get color setting from sidebar/params if available, else default
-
 
     html_content = render_sent_displacy(sent, color_by=color_column, jupyter=False)
 
@@ -126,7 +134,6 @@ if doc and 0 <= sent_idx < len(doc.sentences):
 
 
 else:
-    st.title("Sentence")
     st.info("Please provide `slice_id` and `sent_id`, or `txt` via URL parameters.")
     st.write("Examples:")
     st.code("?slice_id=phil/1900-1925/00000001__01&sent_id=1")

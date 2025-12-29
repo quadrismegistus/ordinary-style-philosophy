@@ -2,6 +2,10 @@ import streamlit as st
 
 st.set_page_config(page_title="Slice Visualization", layout="wide")
 
+# 1. Retrieve last choice
+from osp import STASH_DASHBOARD_STATE
+last_slice_id = STASH_DASHBOARD_STATE.get("osp_last_slice_id")
+
 import sys, os
 
 # Setup paths to import 'osp' and 'utils'
@@ -28,6 +32,8 @@ word_feat_type, color_column, view_mode = setup_sidebar()
 # Get parameters from URL
 query_params = st.query_params
 slice_id = query_params.get("slice_id")
+if not slice_id and last_slice_id:
+    slice_id = last_slice_id
 txt_input = query_params.get("txt")
 
 left_col, right_col = st.columns([1, 1])
@@ -72,6 +78,11 @@ else:
     
     # with right_col:
     #     plot_weight_distribution(doc, color_column=color_column)
+
+    # Auto-track last viewed slice_id
+    if slice_id and st.session_state.get("last_viewed_slice_id") != slice_id:
+        st.session_state["last_viewed_slice_id"] = slice_id
+        STASH_DASHBOARD_STATE["osp_last_slice_id"] = slice_id
 
     display_slice_analysis(
         doc,

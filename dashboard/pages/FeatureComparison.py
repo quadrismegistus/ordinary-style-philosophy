@@ -1,37 +1,9 @@
 import sys, os
-
-# Setup paths to import 'osp' and 'utils'
-PATH_PAGES = os.path.dirname(os.path.abspath(__file__))
-PATH_DASHBOARD = os.path.dirname(PATH_PAGES)
-PATH_REPO = os.path.dirname(PATH_DASHBOARD)
-if PATH_REPO not in sys.path:
-    sys.path.append(PATH_REPO)
-if PATH_DASHBOARD not in sys.path:
-    sys.path.append(PATH_DASHBOARD)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from osp import *
 
-NUM_DISTINCTIVE_FEATS = 25
-EG_TXT_WINDOW = 60
-EG_TXT_WINDOW_LEFT = 25
-EG_TXT_WINDOW_RIGHT = 35
-EG_NUM_EG = 25
-
 import streamlit as st
-import pandas as pd
-from collections import Counter
-from streamlit_local_storage import LocalStorage
 from utils import *
-
-DEFAULT_COMPARISONS = []
-for (name_a, query_a), (name_b, query_b) in COMPARISONS:
-    DEFAULT_COMPARISONS.append(
-        {
-            "label": f"{name_a} vs {name_b}",
-            "group_a": {"name": name_a, "query_str": query_a},
-            "group_b": {"name": name_b, "query_str": query_b},
-        }
-    )
-DEFAULT_COMPARISON = DEFAULT_COMPARISONS[0]
 
 
 def _load_saved_comparisons():
@@ -42,7 +14,7 @@ def _load_saved_comparisons():
 
 st.set_page_config(page_title="Most Distinctive Features", layout="wide")
 
-topcol1, topcol2 = st.columns(2)
+topcol1, topcol2 = st.columns(2, vertical_alignment="bottom")
 with topcol1:
     st.title("Most Distinctive Features")
 
@@ -74,21 +46,24 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-ls = LocalStorage()
+# 1. Retrieve choices (stash-backed)
+last_comp_name = get_current_comparison_name()
+comparison_param = st.query_params.get("comparison")
 
-# 1. Define hardcoded default comparison
-# Import COMPARISONS from osp.constants
+def _label_to_param(label: str) -> str:
+    return str(label).replace(" ", "_") if label is not None else ""
 
-# Build default comparisons from COMPARISONS constant
+def _find_index_for_param(param_val, options):
+    if not param_val:
+        return None
+    for i, opt in enumerate(options):
+        if _label_to_param(opt.get("label", "")) == str(param_val):
+            return i
+    return None
 
-# 2. Retrieve saved comparison from localStorage
-saved_data = ls.getItem("osp_comparison_groups")
-
-# 3. Build options list
-comparison_options = list(DEFAULT_COMPARISONS)
-
-# 3a. Add stash comparisons
+# 2. Build options list strictly from stash
 stash_comps = _load_saved_comparisons()
+comparison_options = []
 for name, comp in sorted(stash_comps.items()):
     g1 = comp.get("group_a", {}) if isinstance(comp, dict) else {}
     g2 = comp.get("group_b", {}) if isinstance(comp, dict) else {}
@@ -97,60 +72,70 @@ for name, comp in sorted(stash_comps.items()):
     label = comp.get("name") or f"{g1.get('name','G1')} vs {g2.get('name','G2')}"
     comparison_options.append(
         {
-            "label": f"{label} (stash)",
+            "label": label,
             "group_a": g1,
             "group_b": g2,
         }
     )
 
-if saved_data and isinstance(saved_data, dict):
-    g1 = saved_data.get("group_a", {})
-    g2 = saved_data.get("group_b", {})
-    if g1 and g2:
-        label = f"{g1.get('name', 'Group 1')} vs {g2.get('name', 'Group 2')} (Saved)"
-        comparison_options.append({"label": label, "group_a": g1, "group_b": g2})
-
-# 4. Check URL parameters to set initial selection or add URL-based option
-q_a_url = st.query_params.get("q_a")
-q_b_url = st.query_params.get("q_b")
-n_a_url = st.query_params.get("n_a")
-n_b_url = st.query_params.get("n_b")
-
+# 3. Initial selection based on last remembered comparison (if present)
 initial_index = 0
-if q_a_url and q_b_url:
-    # Check if these queries match an existing option
-    match_idx = next((i for i, opt in enumerate(comparison_options) 
-                      if opt["group_a"]["query_str"] == q_a_url and opt["group_b"]["query_str"] == q_b_url), None)
-    
+if comparison_param:
+    match_idx = _find_index_for_param(comparison_param, comparison_options)
     if match_idx is not None:
         initial_index = match_idx
-    else:
-        # Add a new transient option from the URL parameters
-        url_opt = {
-            "label": f"{n_a_url or 'G1'} vs {n_b_url or 'G2'} (URL)",
-            "group_a": {"name": n_a_url or "G1", "query_str": q_a_url},
-            "group_b": {"name": n_b_url or "G2", "query_str": q_b_url},
-        }
-        comparison_options.append(url_opt)
-        initial_index = len(comparison_options) - 1
+elif last_comp_name:
+    match_idx = next(
+        (
+            i
+            for i, opt in enumerate(comparison_options)
+            if opt.get("label") == last_comp_name
+        ),
+        None,
+    )
+    if match_idx is not None:
+        initial_index = match_idx
+
+# Guard: if no comparisons available, prompt user to seed or save one
+if not comparison_options:
+    st.warning("No saved comparisons found in HashStash. Create one in Sampling or seed defaults in Settings.")
+    st.stop()
+
+selected_comparison = None
+run_calc = False
 
 with topcol2:
+    topcol2a, topcol2b = st.columns([7,3], vertical_alignment="bottom")
     # 5. Display dropdown
-    selected_comparison = st.selectbox(
-        "Select Comparison",
-        options=comparison_options,
-        index=initial_index,
-        format_func=lambda x: x["label"],
-    )
+    with topcol2a:
+        selected_comparison = st.selectbox(
+            "Group Comparison",
+            options=comparison_options,
+            index=initial_index,
+            format_func=lambda x: x["label"],
+        )
+    with topcol2b:
+        run_calc = st.button("Calculate", type="primary", use_container_width=True)
+        auto_submit = bool(comparison_param) and selected_comparison is not None
+        if auto_submit:
+            run_calc = True
     
-    # Update URL parameters when selection changes
+    # Update URL parameters and global state when selection changes
     if selected_comparison:
-        st.query_params["q_a"] = selected_comparison["group_a"]["query_str"]
-        st.query_params["q_b"] = selected_comparison["group_b"]["query_str"]
-        st.query_params["n_a"] = selected_comparison["group_a"]["name"]
-        st.query_params["n_b"] = selected_comparison["group_b"]["name"]
+        # only track comparison in URL
+        for k in ("q_a", "q_b", "n_a", "n_b"):
+            st.query_params.pop(k, None)
+        st.query_params["comparison"] = _label_to_param(selected_comparison["label"])
+
+        set_current_comparison(selected_comparison["label"], selected_comparison)
 
 midcol1, midcol2 = st.columns(2)
+
+
+@st.cache_data
+def load_slice_ids(query):
+    """Cache the slice ID lookup."""
+    return get_slice_ids(query)
 
 
 @st.cache_data
@@ -187,8 +172,8 @@ def _example_lookup(df_egs: pd.DataFrame):
     return out
 
 
-# Show the selected comparison details
-if selected_comparison:
+# Show the selected comparison details only after button click
+if selected_comparison and run_calc:
     with midcol1:
         st.write(f"### {selected_comparison['label']}")
 
@@ -204,76 +189,69 @@ if selected_comparison:
         # Get the global status window
         status_window = get_status_window()
 
-        with st.status("Calculating feature statistics...", expanded=False) as status:
-            try:
-                # Use the status window to capture stdout
-                with status_window.capture("Calculating feature statistics"):
-                    with logmap(f"logmapping"):
-                        print('done!!')
-                    df_smpl_feats = (
-                        get_balanced_slice_sample_feats(
-                            groups_train, with_diff_rows=True
-                        )
-                        .reset_index()
-                        .sample(frac=1)
-                    )
+        # with st.status("Calculating feature statistics...", expanded=False) as status:
+        try:
+            with log_progress("Calculating feature statistics"):
+                # Use cached function from utils
+                df_smpl_feats = load_comparison_stats(tuple(groups_train))
+                df_smpl_feats = df_smpl_feats.sample(frac=1)
 
-                # --- Cached examples (per group) ---
-                top_feats_g1 = (
-                    df_smpl_feats[df_smpl_feats["target"] == name_a]
-                    .sort_values("feat_rank1")
-                    .head(NUM_DISTINCTIVE_FEATS)["feat"]
-                    .astype(str)
-                    .tolist()
-                )
-                top_feats_g2 = (
-                    df_smpl_feats[df_smpl_feats["target"] == name_b]
-                    .sort_values("feat_rank2")
-                    .head(NUM_DISTINCTIVE_FEATS)["feat"]
-                    .astype(str)
-                    .tolist()
-                )
+            # --- Cached examples (per group) ---
+            top_feats_g1 = (
+                df_smpl_feats[df_smpl_feats["target"] == name_a]
+                .sort_values("feat_rank1")
+                .head(NUM_DISTINCTIVE_FEATS)["feat"]
+                .astype(str)
+                .tolist()
+            )
+            top_feats_g2 = (
+                df_smpl_feats[df_smpl_feats["target"] == name_b]
+                .sort_values("feat_rank2")
+                .head(NUM_DISTINCTIVE_FEATS)["feat"]
+                .astype(str)
+                .tolist()
+            )
 
-                with status_window.capture("Fetching slice IDs and examples"):
-                    print("Getting slice IDs...")
-                    slice_ids_g1 = get_slice_ids(q_a)
-                    slice_ids_g2 = get_slice_ids(q_b)
+            with log_progress("Fetching slice IDs and examples"):
+                print("Getting slice IDs...")
+                # Use cached function
+                slice_ids_g1 = load_slice_ids(q_a)
+                slice_ids_g2 = load_slice_ids(q_b)
 
-                    random.shuffle(slice_ids_g1)
-                    random.shuffle(slice_ids_g2)
+                random.shuffle(slice_ids_g1)
+                random.shuffle(slice_ids_g2)
 
-                    print("Fetching cached examples...")
+                with log_progress("Fetching cached examples"):    
                     df_egs_g1 = load_slice_feat_examples(
-                        slice_ids_g1, top_feats_g1, num_egs=100
+                        slice_ids_g1, top_feats_g1, num_egs=3
                     )  # .drop_duplicates(['slice_id', 'feat']).sample(frac=1).iloc[:EG_NUM_EG]
                     df_egs_g2 = load_slice_feat_examples(
-                        slice_ids_g2, top_feats_g2, num_egs=100
+                        slice_ids_g2, top_feats_g2, num_egs=3
                     )  # .drop_duplicates(['slice_id', 'feat']).sample(frac=1).iloc[:EG_NUM_EG]
 
+                with log_progress("Looking up examples for group 1"):
                     egs_g1 = _example_lookup(df_egs_g1)
+                with log_progress("Looking up examples for group B"):
                     egs_g2 = _example_lookup(df_egs_g2)
 
-                    print(
-                        f"Found examples for {len(egs_g1)} features in G1 and {len(egs_g2)} features in G2."
-                    )
+                print(
+                    f"Found examples for {len(egs_g1)} features in group A and {len(egs_g2)} features in group B."
+                )
 
-                status.update(
-                    label="Feature statistics and examples complete!",
-                    state="complete",
-                    expanded=False,
-                )
-            except Exception as e:
-                st.error(f"Error calculating feature statistics: {e}")
-                df_smpl_feats = pd.DataFrame()
-                egs_g1, egs_g2 = {}, {}
-                status.update(
-                    label="Error calculating feature statistics", state="error"
-                )
+        except Exception as e:
+            st.error(f"Error calculating feature statistics: {e}")
+            df_smpl_feats = pd.DataFrame()
+            egs_g1, egs_g2 = {}, {}
+            # status.update(
+                # label="Error calculating feature statistics", state="error"
+            # )
 
     col1, col2 = st.columns(2)
 
     # helper to render metrics
-    def render_feat_metrics(df, target, title, examples_dict, sort_by="feat_rank"):
+    def render_feat_metrics(
+        df, target, title, examples_dict, sort_by="feat_rank", active_feat_type=None
+    ):
         def _format(ex):
             slice_id = ex.get("slice_id")
             href = f"/Passages?slice_id={slice_id}"
@@ -317,16 +295,25 @@ if selected_comparison:
         lookup_g1 = df[df["target"] == name_a].set_index("feat")
         lookup_g2 = df[df["target"] == name_b].set_index("feat")
 
-        # Display metrics in a grid or list
-        metric_num = 0
+        # Track feature type and global ordering; filtering happens upstream
+        df_target = df_target.copy()
+        df_target["feat_type"] = df_target["feat"].apply(
+            lambda x: x.split("_", 1)[0] if isinstance(x, str) and "_" in x else str(x)
+        )
+        df_target["global_rank"] = range(1, len(df_target) + 1)
+
+        if active_feat_type:
+            df_target = df_target[df_target["feat_type"] == active_feat_type]
+            if df_target.empty:
+                st.write("No distinctive features found.")
+                return
+
         for _, row in df_target.iterrows():
             feat = row["feat"]
             if feat in BAD_SLICE_FEATS:
                 continue
-            z = row["z"]
-            raw = row["raw"]
+            global_rank = int(row.get("global_rank", 0)) or 0
 
-            # Get values for both groups for the badge subtraction string
             try:
                 row_g1 = lookup_g1.loc[feat]
                 row_g2 = lookup_g2.loc[feat]
@@ -334,20 +321,16 @@ if selected_comparison:
                     row_g1 = row_g1.iloc[0]
                 if isinstance(row_g2, pd.DataFrame):
                     row_g2 = row_g2.iloc[0]
-
                 raw_a, raw_b = row_g1["raw"], row_g2["raw"]
                 z_a, z_b = row_g1["z"], row_g2["z"]
             except (KeyError, IndexError):
                 raw_a = raw_b = z_a = z_b = 0
 
-            # Show 3 columns inside each of the main cols
-            feat_desc = FEAT2DESC.get(feat, feat)
-            metric_num += 1
-            feat_type, feat_name = feat.split("_", 1)
-            # feat_hdr = f"{feat_name} ({feat_type})\n*{feat_desc}*"
-            feat_hdr = f"{feat_desc}"
+            feat_typex,feat_namex = feat.split("_", 1)
+            feat_desc_default = f'{feat_namex} ({feat_typex})'
+            feat_desc = FEAT2DESC.get(feat, feat_desc_default)
             st.divider()
-            st.markdown(f"#### {metric_num}. {feat_hdr}")
+            st.markdown(f"#### {global_rank}. {feat_desc}")
 
             ex_list = (examples_dict or {}).get(feat) or []
             if isinstance(ex_list, dict):
@@ -359,12 +342,8 @@ if selected_comparison:
                 window_right=EG_TXT_WINDOW_RIGHT,
                 keep_asterisks=False,
             )
-            # xmargin = ' '*10
-            # ex_list_text = [f'{xstr}{xmargin}# {ex.get("slice_id")}' for xstr, ex in zip(ex_list_text, ex_list)]
-            # all_eg_text = "\n".join(ex_list_text)
-            # st.code(all_eg_text, height=128,line_numbers=False,language="markdown")
             eg_height = 185
-            container_div = f'<div style="height: {eg_height}px; overflow: auto; scrollbar-width: none; font-family: monospace; font-size: 12px; white-space: nowrap; background: transparent; margin: 0; padding: 0; line-height: 1.0; display: flex; flex-direction: column;">'
+            container_div = f'<div style="height: {eg_height}px; overflow: hidden; scrollbar-width: none; font-family: monospace; font-size: 12px; white-space: nowrap; background: transparent; margin: 0; padding: 0; line-height: 1.0; display: flex; flex-direction: column;">'
             all_eg_text_html = [container_div]
             for eg_text, ex in zip(ex_list_text, ex_list):
                 all_eg_text_html.append(
@@ -381,16 +360,11 @@ if selected_comparison:
                 ]
             )
             all_html_wrapped = (
-                f'<div style="white-space: nowrap; overflow-x: auto;">{all_html}</div>'
+                f'<div style="white-space: nowrap;">{all_html}</div>'
             )
             all_html_wrapped = f"{container_div}{all_html_wrapped}</div>"
 
             st.components.v1.html(all_html_wrapped, height=eg_height, scrolling=False)
-
-            # if ex_list:
-            #     with st.expander("Examples", expanded=False):
-
-            #         st.components.v1.html(all_html_wrapped, height=220, scrolling=True)
 
             c1, c1b, c2, c2b, c3 = st.columns(
                 [3, 0.5, 3, 0.5, 3], vertical_alignment="top"
@@ -401,11 +375,10 @@ if selected_comparison:
                 st.text("=")
 
             if target == name_b:
-                # Group 2 column: show G2, then G1, then G2-G1
-                raw_a2 = f"{raw_a:.0f}" if raw_a > 1 else f"{raw_a:.2f}"
-                raw_b2 = f"{raw_b:.0f}" if raw_b > 1 else f"{raw_b:.2f}"
+                raw_a2 = f"{raw_a:.1f}" if raw_a > 1 else f"{raw_a:.2f}"
+                raw_b2 = f"{raw_b:.1f}" if raw_b > 1 else f"{raw_b:.2f}"
                 raw_diff2_rev = (
-                    f"{raw_b-raw_a:.0f}" if raw_b - raw_a > 1 else f"{raw_b-raw_a:.2f}"
+                    f"{raw_b-raw_a:.1f}" if raw_b - raw_a > 1 else f"{raw_b-raw_a:.2f}"
                 )
                 with c1:
                     st.metric(
@@ -422,11 +395,10 @@ if selected_comparison:
                         delta=f"{z_b-z_a:+.2f}z",
                     )
             else:
-                # Group 1 column: Always show G1, G2, then G1-G2
-                raw_a2 = f"{raw_a:.0f}" if raw_a > 1 else f"{raw_a:.2f}"
-                raw_b2 = f"{raw_b:.0f}" if raw_b > 1 else f"{raw_b:.2f}"
+                raw_a2 = f"{raw_a:.1f}" if raw_a > 1 else f"{raw_a:.2f}"
+                raw_b2 = f"{raw_b:.1f}" if raw_b > 1 else f"{raw_b:.2f}"
                 raw_diff2 = (
-                    f"{raw_a-raw_b:.0f}" if raw_a - raw_b > 1 else f"{raw_a-raw_b:.2f}"
+                    f"{raw_a-raw_b:.1f}" if raw_a - raw_b > 1 else f"{raw_a-raw_b:.2f}"
                 )
                 with c1:
                     st.metric(
@@ -443,18 +415,54 @@ if selected_comparison:
                         delta=f"{z_a-z_b:+.2f}z",
                     )
 
-            # Examples dropdown (collapsed by default): tabs for Text vs HTML
 
-    with col1:
-        st.info(f"##### Group 1: {name_a}")
-        # st.code(q_a, language="python")
-        render_feat_metrics(
-            df_smpl_feats, name_a, f"{name_a} (G1)", egs_g1, sort_by="feat_rank1"
-        )
+    # Shared tabs so both columns respond to the same selection
+    # Build ordered feat type list (avg rank ascending) from the combined targets
+    df_smpl_feats['feat_type'] = df_smpl_feats['feat'].apply(lambda x: x.split("_", 1)[0])
+    type_ranks = df_smpl_feats.groupby("feat_type").min(numeric_only=True).feat_rank.to_dict()
 
-    with col2:
-        st.error(f"##### Group 2: {name_b}")
-        # st.code(q_b, language="python")
-        render_feat_metrics(
-            df_smpl_feats, name_b, f"{name_b} (G2)", egs_g2, sort_by="feat_rank2"
-        )
+    def _avg_rank(ftype: str):
+        return int(type_ranks.get(ftype)) or 0
+        # vals = type_ranks.get(ftype) or []
+        # return sum(vals) / len(vals) if vals else float("inf")
+
+    nice_names = {
+        "sent": "Clause forms",
+        "pos": "Parts of speech",
+        "deprel": "Dependency relations",
+        "phrase": "Phrasal forms",
+        "ttr": "Diversity metrics",
+    }
+
+    feat_types_all = sorted(type_ranks.keys(), key=_avg_rank)
+
+    tab_labels = ["All"] + [
+        f"{nice_names.get(ftype, ftype.title())} (min rank = {(_avg_rank(ftype))})"
+        for ftype in feat_types_all
+    ]
+    tabs = st.tabs(tab_labels)
+
+    for tab, ftype in zip(tabs, [None] + feat_types_all):
+        with tab:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.info(f"##### Group 1: {name_a}")
+                render_feat_metrics(
+                    df_smpl_feats,
+                    name_a,
+                    f"{name_a} (G1)",
+                    egs_g1,
+                    sort_by="feat_rank1",
+                    active_feat_type=ftype,
+                )
+
+            with col2:
+                st.error(f"##### Group 2: {name_b}")
+                render_feat_metrics(
+                    df_smpl_feats,
+                    name_b,
+                    f"{name_b} (G2)",
+                    egs_g2,
+                    sort_by="feat_rank2",
+                    active_feat_type=ftype,
+                )

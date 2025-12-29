@@ -6,6 +6,9 @@ import streamlit as st
 
 st.set_page_config(page_title="Groups", layout="wide")
 
+# 1. Retrieve last choice
+last_inspected = STASH_DASHBOARD_STATE.get("osp_last_inspected_group")
+
 
 @st.cache_data
 def load_metadata():
@@ -275,10 +278,21 @@ with saved_tab:
         selected_saved = st.selectbox(
             "Inspect saved group",
             options=[""] + saved_names,
+            index=saved_names.index(last_inspected) + 1 if last_inspected in saved_names else 0,
             format_func=lambda x: x or "Select saved group",
         )
         if selected_saved:
+            # Auto-track last inspected group
+            if st.session_state.get("last_inspected_group") != selected_saved:
+                st.session_state["last_inspected_group"] = selected_saved
+                STASH_DASHBOARD_STATE["osp_last_inspected_group"] = selected_saved
+            
             saved = saved_groups.get(selected_saved, {})
             st.info(
                 f"Name: {saved.get('name')}\n\nQuery: {saved.get('query_str')}\n\nSaved at: {saved.get('saved_at')}"
             )
+            if st.button("Delete group", type="secondary"):
+                if selected_saved in STASH_DASHBOARD_GROUPS:
+                    del STASH_DASHBOARD_GROUPS[selected_saved]
+                    st.success(f"Deleted group '{selected_saved}'.")
+                    st.rerun()

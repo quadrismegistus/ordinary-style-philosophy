@@ -15,7 +15,78 @@ if PATH_REPO not in sys.path:
 
 from osp import *
 
-# Constants
+# --- State Management Helpers ---
+
+def get_current_comparison_name():
+    """Get the currently selected comparison name from session state or HashStash."""
+    if "current_comparison_name" in st.session_state:
+        return st.session_state["current_comparison_name"]
+    val = STASH_DASHBOARD_STATE.get("osp_last_comparison_name")
+    if val:
+        st.session_state["current_comparison_name"] = val
+    return val
+
+def set_current_comparison(name, comp_dict=None):
+    """Set the current comparison in session state and HashStash."""
+    changed = False
+    if st.session_state.get("current_comparison_name") != name:
+        st.session_state["current_comparison_name"] = name
+        STASH_DASHBOARD_STATE["osp_last_comparison_name"] = name
+        changed = True
+        
+    if comp_dict and st.session_state.get("current_comparison_data") != comp_dict:
+        st.session_state["current_comparison_data"] = comp_dict
+        STASH_DASHBOARD_STATE["osp_last_comparison"] = comp_dict
+        changed = True
+    return changed
+
+def get_current_group_a():
+    if "current_group_a" in st.session_state:
+        return st.session_state["current_group_a"]
+    val = STASH_DASHBOARD_STATE.get("osp_last_group_a")
+    if val:
+        st.session_state["current_group_a"] = val
+    return val
+
+def set_current_group_a(name):
+    if st.session_state.get("current_group_a") == name:
+        return False
+    st.session_state["current_group_a"] = name
+    STASH_DASHBOARD_STATE["osp_last_group_a"] = name
+    return True
+
+def get_current_group_b():
+    if "current_group_b" in st.session_state:
+        return st.session_state["current_group_b"]
+    val = STASH_DASHBOARD_STATE.get("osp_last_group_b")
+    if val:
+        st.session_state["current_group_b"] = val
+    return val
+
+def set_current_group_b(name):
+    if st.session_state.get("current_group_b") == name:
+        return False
+    st.session_state["current_group_b"] = name
+    STASH_DASHBOARD_STATE["osp_last_group_b"] = name
+    return True
+
+# --- Caching Helpers ---
+
+@st.cache_data
+def get_cached_all_feats(normalize=True):
+    """Cached version of get_all_feats to avoid slow disk I/O on every run."""
+    return get_all_feats(normalize=normalize)
+
+@cache
+def load_comparison_stats(groups_train):
+    """
+    Cache the heavy feature aggregation for a given comparison.
+    Uses an in-process LRU cache to avoid Streamlit element replay issues.
+    groups_train is a tuple of ((name_a, query_a), (name_b, query_b)).
+    """
+    return get_balanced_slice_sample_feats(list(groups_train), with_diff_rows=True).reset_index()
+
+# --- Existing Constants ---
 DEFAULT_SLICE_LEN = 1000
 
 featcols = [
@@ -33,9 +104,9 @@ featcols = [
 # ============================================================================
 
 
-def _make_log_html(log_lines, height=256, width=256):
+def _make_log_html(log_lines, height=50,  width=256):
     lines_html = "".join(
-        [f'<div style="margin:0;padding:0;">{line}</div>' for line in log_lines]
+        [f'<div style="margin:0;padding:0;">{">" if not line.startswith("(") else " "} {line.strip()}</div>' for i, line in enumerate(log_lines)]
     )
     return f"""
     <div style="position: fixed; bottom: 0; left: 0; width: {width}px; height: {height}px; 
@@ -77,12 +148,14 @@ class StatusWindow:
             )
             html_log = _make_log_html(log_lines)
             self.placeholder.markdown(html_log, unsafe_allow_html=True)
-
     @contextlib.contextmanager
     def capture(self, label=None):
         """Redirect stdout to this log window."""
+        import time
+        
+        start_time = time.time()
         if label:
-            self.write(f"\n# {label}")
+            self.write(label)
 
         class LogStream:
             def __init__(self, window, original_stdout):
@@ -103,7 +176,9 @@ class StatusWindow:
             yield
         finally:
             sys.stdout = old_stdout
-            # if label: self.write(f"--- {label} complete ---")
+            elapsed = time.time() - start_time
+            if label and elapsed > 1:
+                self.write(f"({elapsed:.2f}s)")
 
     def render(self):
         """Display the log window at the top left of the screen."""
@@ -112,7 +187,7 @@ class StatusWindow:
             st.session_state.logs if st.session_state.logs else ["No logs yet..."]
         )
         html_log = _make_log_html(log_lines)
-        self.placeholder.markdown(html_log, unsafe_allow_html=True)
+        # self.placeholder.markdown(html_log, unsafe_allow_html=True)
 
 
 def get_status_window():
@@ -647,3 +722,18 @@ newtext = """By a `denoting phrase' I mean a phrase such as any one of the follo
     interpretation of such phrases is a matter of considerably difficulty; indeed, it is very hard to frame any theory not 
     susceptible of formal refutation. All the difficulties with which I am acquainted are met, so far as I can discover, by the 
     theory which I am about to explain."""
+
+
+@contextlib.contextmanager
+def log_progress(msg):
+    """Context manager that combines status_window.capture and st.spinner.
+    Prioritizes status_window - ensures it captures all output even if spinner fails."""
+    status_window = get_status_window()
+    with status_window.capture(msg):
+        try:
+            with st.spinner(msg):
+                yield
+        finally:
+            pass
+
+
