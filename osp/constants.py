@@ -34,8 +34,11 @@ BAD_SLICE_FEATS = [
     "pos_``",
     # "pos_.",
     "pos_$",
+    "ttr_OTHER",
     "ttr",
     "ttr_recog",
+    "pos_-RSB-",
+    "pos_-LSB-",
 ]
 BAD_POS = {"X"}
 BAD_DEPREL = {"flat"}
@@ -82,6 +85,9 @@ STASH_FREQS_SLICES = get_stash(f'osp_freqs_slices_{SLICE_LEN}')
 STASH_DF_PREDS_FOR_SLICES = get_stash('osp_df_preds_for_slices')
 STASH_PARSED_SLICE_IDS = get_stash('osp_parsed_slice_ids')
 STASH_ALL_TEXT_SLICE_IDS = get_stash('osp_all_text_slice_ids')
+STASH_FEAT_GROUP_EGS = get_stash('osp_feat_group_egs')
+STASH_FEAT_EXAMPLES2 = get_stash('osp_feat_examples2')
+STASH_FEAT_EG_CACHE = get_stash('osp_feat_eg_cache')
 
 
 # Wordsets
@@ -454,3 +460,6 @@ COLOR_SENT_BY_COL = 'weight_z'
 COLOR_SENT_BY_FEAT = 'deprel'
 NORMALIZE_FEAT_DATA = True
 NORMALIZE_CLASSIFY_DATA = True
+
+BAD_SLICE_FEATS += ['phrase_'+k for k in PHRASEFEAT2DESC.keys()]
+MAX_FEATSET_FEATS = 50

@@ -35,3 +35,14 @@ def get_doc_html2(doc, **kwargs):
     """
     from .sentences import get_all_sent_html
     return "\n".join([get_all_sent_html(sent, **kwargs) for sent in doc.sentences])
+
+def get_doc_html_table(doc, color_by='weight_z', word_feat_type='deprel'):
+    from .sentences import get_sent_html
+    from .features import extract_syntax_feats_sent
+    rows = []
+    for sent in doc.sentences:
+        html = get_sent_html(sent, color_by=color_by, word_feat_type=word_feat_type)
+        sent_feats = extract_syntax_feats_sent(sent)
+        row = {'sent_id':sent.index+1, 'sent':sent.text, 'html':html, **sent_feats}
+        rows.append(row)
+    return pd.DataFrame(rows).set_index('sent_id')

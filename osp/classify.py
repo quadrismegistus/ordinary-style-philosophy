@@ -238,24 +238,24 @@ def classify_then_predict_comparisons(
         l_feats.append(df_feats.assign(comparison=comparison_name))
         d_models[comparison_name] = models
     odf_preds, odf_feats = pd.concat(l_preds), pd.concat(l_feats)
-    # odf_feats["group1"] = [x.split(" vs ")[0] for x in odf_feats["comparison"]]
-    # odf_feats["group2"] = [x.split(" vs ")[1] for x in odf_feats["comparison"]]
+    odf_feats["group1"] = [x.split(" vs ")[0] for x in odf_feats["comparison"]]
+    odf_feats["group2"] = [x.split(" vs ")[1] for x in odf_feats["comparison"]]
 
-    # odf_feats["score_mean_diff"] = odf_feats["score_mean1"] - odf_feats["score_mean2"]
-    # odf_feats["score_mean_diff_abs"] = np.abs(odf_feats["score_mean_diff"])
-    # odf_feats["score_mean_diff_pct"] = (
-    #     odf_feats["score_mean_diff"] / odf_feats["score_mean2"]
-    # )
-    # odf_feats["score_mean_div"] = odf_feats["score_mean1"] / odf_feats["score_mean2"]
-    # odf_feats["score_mean_div_abs"] = np.abs(odf_feats["score_mean_div"])
-    # odf_feats["score_z_diff"] = odf_feats["score_z1"] - odf_feats["score_z2"]
-    # odf_feats["score_z_diff_abs"] = np.abs(odf_feats["score_z_diff"])
-    # odf_feats["score_z_diff_pct"] = odf_feats["score_z_diff"] / odf_feats["score_z2"]
-    # odf_feats["score_z_div"] = odf_feats["score_z1"] / odf_feats["score_z2"]
-    # odf_feats["score_z_div_abs"] = np.abs(odf_feats["score_z_div"])
+    odf_feats["score_mean_diff"] = odf_feats["score_mean1"] - odf_feats["score_mean2"]
+    odf_feats["score_mean_diff_abs"] = np.abs(odf_feats["score_mean_diff"])
+    odf_feats["score_mean_diff_pct"] = (
+        odf_feats["score_mean_diff"] / odf_feats["score_mean2"]
+    )
+    odf_feats["score_mean_div"] = odf_feats["score_mean1"] / odf_feats["score_mean2"]
+    odf_feats["score_mean_div_abs"] = np.abs(odf_feats["score_mean_div"])
+    odf_feats["score_z_diff"] = odf_feats["score_z1"] - odf_feats["score_z2"]
+    odf_feats["score_z_diff_abs"] = np.abs(odf_feats["score_z_diff"])
+    odf_feats["score_z_diff_pct"] = odf_feats["score_z_diff"] / odf_feats["score_z2"]
+    odf_feats["score_z_div"] = odf_feats["score_z1"] / odf_feats["score_z2"]
+    odf_feats["score_z_div_abs"] = np.abs(odf_feats["score_z_div"])
 
-    # odf_feats["feat_name"] = [x.split("_", 1)[-1] for x in odf_feats.feature]
-    # odf_feats["feat_type"] = [x.split("_")[0] for x in odf_feats.feature]
+    odf_feats["feat_name"] = [x.split("_", 1)[-1] for x in odf_feats.feature]
+    odf_feats["feat_type"] = [x.split("_")[0] for x in odf_feats.feature]
     odf_feats.sort_values("weight", ascending=False, inplace=True)
     return (odf_preds, odf_feats) if not return_models else (odf_preds, odf_feats, d_models)
 
@@ -300,7 +300,7 @@ def get_preds_feats(
 
 
 
-def get_new_preds_feats(txt):
+def get_new_preds_feats(txt, slice_id=None):
     doc = get_nlp_doc(txt) if isinstance(txt, str) else txt
 
     df_preds, df_feats, d_models = get_preds_feats()
@@ -312,64 +312,57 @@ def get_new_preds_feats(txt):
     df_all_feats_raw_stds = df_all_feats_raw.std()
 
     # get feats
-    new_feats = extract_slice_feats(doc)
-    new_feats = {fname:new_feats.get(fname, 0) for fname in feat_names}
-    new_feats_z = {
-        k: float((v - df_all_feats_raw_means[k]) / df_all_feats_raw_stds[k])
-        for k, v in new_feats.items()
-        if k in df_all_feats_raw_means
-    }
+    if slice_id and slice_id in df_all_feats_raw.index:
+        new_feats = df_all_feats_raw.loc[slice_id].to_dict()
+        new_feats_z = df_all_feats.loc[slice_id].to_dict()
+    else:
+        new_feats = extract_slice_feats(doc)
+        new_feats = {fname:new_feats.get(fname, 0) for fname in feat_names}
+        new_feats_z = {
+            k: float((v - df_all_feats_raw_means[k]) / df_all_feats_raw_stds[k])
+            for k, v in new_feats.items()
+            if k in df_all_feats_raw_means
+        }
+    
     new_feats_df = pd.DataFrame([new_feats])
-    new_feats_z_df = pd.DataFrame([new_feats_z])
+    if slice_id and slice_id in df_preds.index:
+        df_preds_new = df_preds.loc[slice_id].copy()
+        df_preds_new['predict_type'] = 'stashed'
+    else:
+        # get preds
+        ld_preds_new = []
+        for cmpname, models in d_models.items():
+            for nrun, mdl in enumerate(models):
+                # Ensure new_feats_df has columns in same order as mdl.features_
+                X = new_feats_df[mdl.features_].values
+                new_prob1,new_prob2 = mdl.predict_proba(X)[0]
+                new_name1,new_name2 = mdl.classes_
+                new_pred = mdl.predict(X)[0]
+                d_preds_new = {
+                    'comparison': cmpname,
+                    'run':nrun,
+                    'predict_type': 'new',
+                    'test_label': ' / '.join(mdl.classes_),
+                    'true_label': '',
+                    'pred_label': new_pred,
+                    f'prob_{new_name1}': new_prob1,
+                    f'prob_{new_name2}': new_prob2,
+                }
+                ld_preds_new.append(d_preds_new)
+        df_preds_new = pd.DataFrame(ld_preds_new)
 
     # reintegrate feats into df_feats
     ld_feats_new = []
     for cmpname, cdf in df_feats.groupby('comparison'):
         for feat in feat_names:
-            d_feats_new = dict(df_feats.query('feature==@feat & comparison==@cmpname').iloc[0])
+            matches = df_feats.query('feature==@feat & comparison==@cmpname')
+            if matches.empty: continue
+            d_feats_new = dict(matches.iloc[0])
             d_feats_new['score_mean3'] = new_feats.get(feat, 0)
             d_feats_new['score_z3'] = new_feats_z.get(feat, 0)
             ld_feats_new.append(d_feats_new)
 
     df_feats_new = pd.DataFrame(ld_feats_new)
-    # df_feats_new['score_mean_diff_3-1'] = df_feats_new['score_mean3'] - df_feats_new['score_mean1']
-    # df_feats_new['score_mean_diff_3-2'] = df_feats_new['score_mean3'] - df_feats_new['score_mean2']
-
-    # df_feats_new['score_mean_div_3-1'] = df_feats_new['score_mean3'] / df_feats_new['score_mean1']
-    # df_feats_new['score_mean_div_3-2'] = df_feats_new['score_mean3'] / df_feats_new['score_mean2']
-
-    # df_feats_new['score_mean_diff_abs_3-1'] = df_feats_new['score_mean_diff_3-1'].abs()
-    # df_feats_new['score_mean_diff_abs_3-2'] = df_feats_new['score_mean_diff_3-2'].abs()
-
-    # df_feats_new['score_z_diff_3-1'] = df_feats_new['score_z3'] - df_feats_new['score_z1']
-    # df_feats_new['score_z_diff_3-2'] = df_feats_new['score_z3'] - df_feats_new['score_z2']
-
-    # df_feats_new['score_z_div_3-1'] = df_feats_new['score_z3'] / df_feats_new['score_z1']
-    # df_feats_new['score_z_div_3-2'] = df_feats_new['score_z3'] / df_feats_new['score_z2']
-
-    # df_feats_new['score_z_diff_abs_3-1'] = df_feats_new['score_z_diff_3-1'].abs()
-    # df_feats_new['score_z_diff_abs_3-2'] = df_feats_new['score_z_diff_3-2'].abs()
-
-    # get preds
-    ld_preds_new = []
-    for cmpname, models in d_models.items():
-        for nrun, mdl in enumerate(models):
-            new_prob1,new_prob2 = mdl.predict_proba(new_feats_df.values)[0]
-            new_name1,new_name2 = mdl.classes_
-            new_pred = mdl.predict(new_feats_df.values)[0]
-            d_preds_new = {
-                'comparison': cmpname,
-                'run':nrun,
-                'predict_type': 'new',
-                'test_label': ' / '.join(mdl.classes_),
-                'true_label': '',
-                'pred_label': new_pred,
-                f'prob_{new_name1}': new_prob1,
-                f'prob_{new_name2}': new_prob2,
-            }
-            ld_preds_new.append(d_preds_new)
-    df_preds_new = pd.DataFrame(ld_preds_new)
-    
     return df_preds_new, df_feats_new
 
 def get_feat_names_from_models(d_models):

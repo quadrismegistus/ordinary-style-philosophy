@@ -670,3 +670,10 @@ def get_clause_nodes_from_constituency(sent):
 
 def get_clause_form(sent):
     return '(' + render_clause_form(sent) + ')'
+
+def detokenize_stanza(tokens):
+    l = []
+    for tok in tokens:
+        l.append(tok.text)
+        l.append(tok.spaces_after)
+    return ''.join(l)

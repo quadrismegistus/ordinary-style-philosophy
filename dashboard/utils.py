@@ -3,6 +3,9 @@ import streamlit as st
 import altair as alt
 import numpy as np
 import pandas as pd
+import contextlib
+import io
+from datetime import datetime
 
 # Setup paths to import 'osp'
 PATH_HERE = os.path.dirname(os.path.abspath(__file__))
@@ -23,6 +26,101 @@ featcols = [
     "score_mean_diff_3-1",
     "score_mean_diff_3-2",
 ]
+
+
+# ============================================================================
+# BARE-BONES LOG WINDOW
+# ============================================================================
+
+
+def _make_log_html(log_lines, height=256, width=256):
+    lines_html = "".join(
+        [f'<div style="margin:0;padding:0;">{line}</div>' for line in log_lines]
+    )
+    return f"""
+    <div style="position: fixed; bottom: 0; left: 0; width: {width}px; height: {height}px; 
+                        z-index: 999999; overflow: scroll; scrollbar-width: none; background: transparent; max-height: {height}px; max-width: {width}px;
+                        margin: 0; padding: 5px; display: flex; flex-direction: column-reverse;
+                        box-sizing: border-box;">
+                <div style="font-family: monospace; font-size: 10px; white-space: pre-wrap; 
+                            color: #666; margin: 0; padding: 0; border: none; background: transparent;
+                            display: flex; flex-direction: column;">
+                    {lines_html}
+                </div>
+            </div>
+    """
+
+
+class StatusWindow:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(StatusWindow, cls).__new__(cls)
+            cls._instance.placeholder = None
+        return cls._instance
+
+    def __init__(self):
+        if "logs" not in st.session_state:
+            st.session_state.logs = []
+
+    def write(self, msg):
+        """Append a message to the logs and update session state."""
+        st.session_state.logs.append(str(msg))
+        if len(st.session_state.logs) > 500:
+            st.session_state.logs = st.session_state.logs[-500:]
+
+        # If we have a placeholder, update it immediately
+        if self.placeholder:
+            log_lines = (
+                st.session_state.logs if st.session_state.logs else ["No logs yet..."]
+            )
+            html_log = _make_log_html(log_lines)
+            self.placeholder.markdown(html_log, unsafe_allow_html=True)
+
+    @contextlib.contextmanager
+    def capture(self, label=None):
+        """Redirect stdout to this log window."""
+        if label:
+            self.write(f"\n# {label}")
+
+        class LogStream:
+            def __init__(self, window, original_stdout):
+                self.window = window
+                self.original_stdout = original_stdout
+
+            def write(self, text):
+                self.original_stdout.write(text)
+                if text.strip():
+                    self.window.write(text.strip())
+
+            def flush(self):
+                self.original_stdout.flush()
+
+        old_stdout = sys.stdout
+        sys.stdout = LogStream(self, old_stdout)
+        try:
+            yield
+        finally:
+            sys.stdout = old_stdout
+            # if label: self.write(f"--- {label} complete ---")
+
+    def render(self):
+        """Display the log window at the top left of the screen."""
+        self.placeholder = st.empty()
+        log_lines = (
+            st.session_state.logs if st.session_state.logs else ["No logs yet..."]
+        )
+        html_log = _make_log_html(log_lines)
+        self.placeholder.markdown(html_log, unsafe_allow_html=True)
+
+
+def get_status_window():
+    return StatusWindow()
+
+
+def render_status_window():
+    get_status_window().render()
 
 
 # Utility Functions
@@ -70,40 +168,57 @@ def load_weights():
     return get_current_feat_weights()
 
 
-@st.cache_data
-def load_new_preds_feats(_text_input, cache_key=None):
-    """
-    _text_input can be a string (custom text) or a stanza Document.
-    cache_key is used for Streamlit hashing since Document is unhashable.
-    """
-    doc = process_text(_text_input) if isinstance(_text_input, str) else _text_input
-    df_new_preds, df_new_feats = get_new_preds_feats(doc)
+# @st.cache_data
+# def load_new_preds_feats(_text_input, cache_key=None):
+#     """
+#     _text_input can be a string (custom text) or a stanza Document.
+#     cache_key is used for Streamlit hashing since Document is unhashable.
+#     """
+#     doc = process_text(_text_input) if isinstance(_text_input, str) else _text_input
 
-    # Keep track of non-numeric columns we need
-    needed_cols = ["feature", "feat_type", "feat_name"]
-    df_new_feats_grouped = (
-        df_new_feats.groupby(needed_cols).mean(numeric_only=True).reset_index()
-    )
+#     # Check if cache_key looks like a slice_id (text_id__slice_num)
+#     slice_id = cache_key if isinstance(cache_key, str) and "__" in cache_key else None
+#     df_new_preds, df_new_feats = get_new_preds_feats(doc, slice_id=slice_id)
 
-    # Sort and filter for display
-    df_new_feats_display = df_new_feats_grouped.sort_values(
-        "score_mean_diff_3-1", ascending=False
-    )
-    df_new_feats_display = df_new_feats_display[
-        needed_cols + [c for c in featcols if c in df_new_feats_display.columns]
-    ]
-    df_new_feats_display["feat_desc"] = df_new_feats_display["feature"].map(
-        lambda x: FEAT2DESC.get(x, "")
-    )
+#     # Keep track of non-numeric columns we need
+#     needed_cols = ["feature", "feat_type", "feat_name"]
+#     # Ensure columns exist before groupby
+#     for col in needed_cols:
+#         if col not in df_new_feats.columns:
+#             if col == 'feat_name':
+#                 df_new_feats['feat_name'] = [str(x).split('_', 1)[-1] if '_' in str(x) else str(x) for x in df_new_feats['feature']]
+#             elif col == 'feat_type':
+#                 df_new_feats['feat_type'] = [str(x).split('_')[0] for x in df_new_feats['feature']]
 
-    df_new_preds = (
-        df_new_preds.groupby("comparison")
-        .mean(numeric_only=True)
-        .sort_values("prob_Philosophy", ascending=False)
-        .drop(columns=["run"])
-    )
+#     df_new_feats_grouped = (
+#         df_new_feats.groupby(needed_cols).mean(numeric_only=True).reset_index()
+#     )
 
-    return df_new_preds, df_new_feats_display, df_new_feats_grouped
+#     # Sort and filter for display
+#     df_new_feats_display = df_new_feats_grouped.sort_values(
+#         "score_mean_diff_3-1", ascending=False
+#     )
+#     df_new_feats_display = df_new_feats_display[
+#         needed_cols + [c for c in featcols if c in df_new_feats_display.columns]
+#     ]
+#     df_new_feats_display["feat_desc"] = df_new_feats_display["feature"].map(
+#         lambda x: FEAT2DESC.get(x, "")
+#     )
+
+#     if "comparison" not in df_new_preds.columns:
+#         # Fallback if comparison is missing (e.g. from old stashed data)
+#         # We can try to get it from the models or just use a placeholder
+#         df_new_preds["comparison"] = "Unknown Comparison"
+
+#     df_new_preds = (
+#         df_new_preds.groupby("comparison")
+#         .mean(numeric_only=True)
+#         .sort_values("prob_Philosophy", ascending=False)
+#     )
+#     if "run" in df_new_preds.columns:
+#         df_new_preds = df_new_preds.drop(columns=["run"])
+
+#     return df_new_preds, df_new_feats_display, df_new_feats_grouped
 
 
 def plot_predictive_features(df_new_feats):
@@ -253,10 +368,16 @@ def display_slice_predictions(
 
 
 def display_slice_analysis(
-    doc, color_column, word_feat_type, view_mode="Annotated", cache_key=None
+    doc,
+    color_column,
+    word_feat_type,
+    view_mode="Annotated",
+    cache_key=None,
+    sort_col='Sent Num',
+    ascending=True,
 ):
     """Reusable component for displaying prediction chart, annotated passage, and feature plot for a slice."""
-    st.markdown("##### Annotated Passage")
+    # st.markdown("##### Annotated Passage")
     # display_doc_annotated(
     #     doc,
     #     color=color_column,
@@ -265,115 +386,217 @@ def display_slice_analysis(
     # )
 
     # Sentence-level feature table (includes HTML-colored sentences)
-    try:
-        st.markdown("##### Sentence Metrics")
-        df_sent_feats = get_sents_feats_df(doc, per_n_words=None, html=True, with_weights=True).round(3)
-        # Allow simple sorting since st.dataframe won't render HTML.
-        sort_col = st.selectbox(
-            "Sort sentence table by:",
-            df_sent_feats.columns.tolist(),
-            index=df_sent_feats.columns.get_loc("Sent Num") if "Sent Num" in df_sent_feats.columns else 0,
+    # try:
+    # st.markdown("##### Sentence Metrics")
+    # df_sent_feats = get_sents_feats_df(
+    #     doc, per_n_words=None, html=True, with_weights=True
+    # ).round(3)
+    # Allow simple sorting since st.dataframe won't render HTML.
+    # sort_col = st.selectbox(
+    #     "Sort sentence table by:",
+    #     df_sent_feats.columns.tolist(),
+    #     index=(
+    #         df_sent_feats.columns.get_loc("Sent Num")
+    #         if "Sent Num" in df_sent_feats.columns
+    #         else 0
+    #     ),
+    # )
+    # df_sorted = df_sent_feats.sort_values(sort_col, ascending=ascending)
+
+    # html_table = get_doc_html2(doc, color=color_column, word_feat_type=word_feat_type)
+    html_df = get_doc_html_table(doc, color_by=color_column, word_feat_type=word_feat_type)
+    html_df = html_df.round(3).drop(columns=['sent']).reset_index()
+    # html_df['sent_id'] = html_df['sent_id'].apply(
+    #     lambda x: f'<a name="sent_{x}">{x}</a>'
+    # )
+    html_df = html_df.rename(columns={'sent_id':'Sent Num'})
+    
+    if cache_key:
+        html_df['View'] = html_df['Sent Num'].apply(
+            lambda x: f'<a href="./Sentence?slice_id={cache_key}&sent_id={x}" target="_blank">🔍</a>'
         )
-        ascending = st.checkbox("Ascending", value=True, key="sent_table_sort_asc")
-        df_sorted = df_sent_feats.sort_values(sort_col, ascending=ascending)
 
-        # Render HTML column; other columns show as text
-        html_table = df_sorted.to_html(escape=False)
-        # Force column widths (Sent column at least 300px)
-        colgroup = "<colgroup><col style='width:80px'><col style='width:300px'><col style='width:120px'></colgroup>"
-        html_table = html_table.replace("<table", f"<table style='table-layout:fixed;width:100%;'")
-        html_table = html_table.replace("<table style='table-layout:fixed;width:100%;'>",
-                                        f"<table style='table-layout:fixed;width:100%;'>\n{colgroup}", 1)
-        st.markdown(html_table, unsafe_allow_html=True)
+    # Move Sent Num and View to front
+    cols = html_df.columns.tolist()
+    if 'View' in cols:
+        cols.insert(0, cols.pop(cols.index('View')))
+    cols.insert(0, cols.pop(cols.index('Sent Num')))
+    html_df = html_df[cols]
 
-        # Clickable Sent Num to open SVG popup
-        st.markdown("###### Sentence Viewer")
+    feats = [x for x in html_df.columns if x not in ['html', 'View', 'Sent Num']]
+    
+    sort_options = []
+    for f in feats:
+        sort_options.append(f"{f} ↑")
+        sort_options.append(f"{f} ↓")
+    
+    current_label = f"{sort_col} {'↑' if ascending else '↓'}"
+    default_index = sort_options.index(current_label) if current_label in sort_options else 0
+    
+    formcol1,formcol2 = st.columns([10,10],vertical_alignment="top")
+    with formcol1:
+        st.markdown("#### Passage breakdown by sentence, clause, and feature")
+    with formcol2:
+        selected_sort = st.selectbox(
+            # "Sort sentence table by:",
+            "Sort sentence table by:",
+            sort_options,
+            index=default_index,
+        )
+        sort_col = selected_sort[:-2]
+        ascending = selected_sort.endswith("↑")
 
-        # Define dialog for displaying sentence diagram
-        if hasattr(st, "dialog"):
-            @st.dialog("Sentence Structure", width="large")
-            def show_sent_dialog(sent, sent_num):
-                st.caption(f"Sentence {sent_num}: {sent.text}")
-                render_kwargs = dict(color_by=color_column)
-                html_content = render_sent_displacy(sent, jupyter=False, **render_kwargs)
-                st.components.v1.html(html_content, height=600, scrolling=True)
-        else:
-            def show_sent_dialog(sent, sent_num):
-                with st.expander(f"Sentence {sent_num} Diagram", expanded=True):
-                    render_kwargs = dict(color_by=color_column)
-                    html_content = render_sent_displacy(sent, jupyter=False, **render_kwargs)
-                    st.components.v1.html(html_content, height=600, scrolling=True)
+    html_df = html_df.sort_values(sort_col, ascending=ascending)
+    html_str = html_df.rename(columns={'html':'Sentence'}).to_html(escape=False, border=0, index=False)
+    # Add CSS to show only top border on table cells (not headers)
+    html_str = f"""
+    <style>
+        table td {{
+            padding: 8px;
+            margin: 0;
+        }}
+        table th {{
+            padding: 8px;
+            margin: 0;
+        }}
+        table td, table th {{
+            border-spacing: 0;
+            border-collapse: collapse;
+        }}
+        table {{
+            margin: 0;
+            padding: 0;
+            border-spacing: 0;
+            border-collapse: collapse;
+            border-radius: 10px;
+            background: white;
+            border: 0px;
+            font-family: "Source Sans", sans-serif;
+        }}
+        table, tr, th, td, .dataframe, .dataframe th, .dataframe td {{
+            font-family: "Source Sans", sans-serif !important;
+            text-align: left;
+            border: 1px solid #ddd;
+        }}
+    </style>
+    {html_str}
+    """
+    st.components.v1.html(html_str, height=500, scrolling=True)
 
-        # Render buttons in sorted order
-        for sent_num in df_sorted.index:
-            try:
-                sent_idx = int(sent_num) - 1
-                sent = doc.sentences[sent_idx]
-            except Exception:
-                continue
-            if st.button(f"View {sent_num}", key=f"sent_svg_btn_{sent_num}"):
-                show_sent_dialog(sent, sent_num)
+    # # Render HTML column; other columns show as text
+    # html_table = df_sorted.to_html(escape=False)
+    # # Force column widths (Sent column at least 300px)
+    # colgroup = "<colgroup><col style='width:80px'><col style='width:300px'><col style='width:120px'></colgroup>"
+    # html_table = html_table.replace(
+    #     "<table", f"<table style='table-layout:fixed;width:100%;'"
+    # )
+    # html_table = html_table.replace(
+    #     "<table style='table-layout:fixed;width:100%;'>",
+    #     f"<table style='table-layout:fixed;width:100%;'>\n{colgroup}",
+    #     1,
+    # )
+    # st.markdown(html_table, unsafe_allow_html=True)
 
-    except Exception as e:
-        st.warning(f"Unable to render sentence metrics: {e}")
+    # # Clickable Sent Num to open SVG popup
+    # st.markdown("###### Sentence Viewer")
+
+    # # Define dialog for displaying sentence diagram
+    # if hasattr(st, "dialog"):
+
+    #     @st.dialog("Sentence Structure", width="large")
+    #     def show_sent_dialog(sent, sent_num):
+    #         st.caption(f"Sentence {sent_num}: {sent.text}")
+    #         render_kwargs = dict(color_by=color_column)
+    #         html_content = render_sent_displacy(
+    #             sent, jupyter=False, **render_kwargs
+    #         )
+    #         st.components.v1.html(html_content, height=600, scrolling=True)
+
+    # else:
+
+    #     def show_sent_dialog(sent, sent_num):
+    #         with st.expander(f"Sentence {sent_num} Diagram", expanded=True):
+    #             render_kwargs = dict(color_by=color_column)
+    #             html_content = render_sent_displacy(
+    #                 sent, jupyter=False, **render_kwargs
+    #             )
+    #             st.components.v1.html(html_content, height=600, scrolling=True)
+
+    # # Render buttons in sorted order
+    # for sent_num in df_sorted.index:
+    #     try:
+    #         sent_idx = int(sent_num) - 1
+    #         sent = doc.sentences[sent_idx]
+    #     except Exception:
+    #         continue
+    #     if st.button(f"View {sent_num}", key=f"sent_svg_btn_{sent_num}"):
+    #         show_sent_dialog(sent, sent_num)
+
+    # except Exception as e:
+        # st.warning(f"Unable to render sentence metrics: {e}")
+
 
 def display_slice_feature_distribution(
     doc, color_column, word_feat_type, view_mode="Annotated", cache_key=None
 ):
     """Reusable component for displaying an annotated passage."""
-    st.markdown("##### Annotated Passage")
     df_slice_preds, df_slice_feats_display, df_slice_feats_grouped = (
         load_new_preds_feats(doc, cache_key=cache_key)
     )
     st.dataframe(df_slice_feats_display)
 
 
-
-def plot_weight_distribution(doc, color_column='weight_z', title=None):
+def plot_weight_distribution(doc, color_column="weight_z", title=None):
     """
     Plots the distribution of feature weights for words/sentences in the doc.
     """
     if title is None:
         title = f"Distribution of {color_column}"
-        
+
     df_slice_feats = get_slice_feats_by_word(doc, weight_cols=[color_column])
-    
+
     if df_slice_feats.empty:
         st.warning("No feature data found for distribution plot.")
         return
 
     # Create density plot (histogram using lines)
     # Using density transform to get smooth lines, separated by feat_type
-    
+
     # Filter for sentence features separately to drop duplicates
-    df_sent = df_slice_feats[df_slice_feats['feat_type'] == 'sent'].drop_duplicates('sent_i')
-    df_others = df_slice_feats[df_slice_feats['feat_type'] != 'sent']
+    df_sent = df_slice_feats[df_slice_feats["feat_type"] == "sent"].drop_duplicates(
+        "sent_i"
+    )
+    df_others = df_slice_feats[df_slice_feats["feat_type"] != "sent"]
     df_plot = pd.concat([df_sent, df_others])
-    
-    chart = alt.Chart(df_plot).transform_density(
-        density=color_column,
-        as_=[color_column, 'density'],
-        groupby=['feat_type']
-    ).transform_joinaggregate(
-        max_density='max(density)',
-        groupby=['feat_type']
-    ).transform_calculate(
-        scaled_density='datum.density / datum.max_density'
-    ).mark_line().encode(
-        x=alt.X(f"{color_column}:Q", title="Feature Weight", scale=alt.Scale(domain=[-2, 2])),
-        y=alt.Y('scaled_density:Q', title="Relative Density"),
-        color=alt.Color('feat_type:N', title="Feature Type"),
-        tooltip=[
-            alt.Tooltip(f"{color_column}:Q", format='.4f'), 
-            alt.Tooltip('scaled_density:Q', format='.2f', title="Rel. Density"), 
-            'feat_type'
-        ]
-    ).properties(
-        title=title,
-        height=200
-    ).interactive()
-    
+
+    chart = (
+        alt.Chart(df_plot)
+        .transform_density(
+            density=color_column, as_=[color_column, "density"], groupby=["feat_type"]
+        )
+        .transform_joinaggregate(max_density="max(density)", groupby=["feat_type"])
+        .transform_calculate(scaled_density="datum.density / datum.max_density")
+        .mark_line()
+        .encode(
+            x=alt.X(
+                f"{color_column}:Q",
+                title="Feature Weight",
+                scale=alt.Scale(domain=[-2, 2]),
+            ),
+            y=alt.Y("scaled_density:Q", title="Relative Density"),
+            color=alt.Color("feat_type:N", title="Feature Type"),
+            tooltip=[
+                alt.Tooltip(f"{color_column}:Q", format=".4f"),
+                alt.Tooltip("scaled_density:Q", format=".2f", title="Rel. Density"),
+                "feat_type",
+            ],
+        )
+        .properties(title=title, height=200)
+        .interactive()
+    )
+
     st.altair_chart(chart, use_container_width=True)
+
 
 def setup_sidebar():
     # Get feature weights to populate options

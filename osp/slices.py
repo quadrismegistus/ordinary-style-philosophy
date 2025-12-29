@@ -254,3 +254,59 @@ def describe_slice_probs(slice_ids, width=90, para='\n\n'):
         break
 
     return para.join(textwrap.fill(x, width=width) for x in out)
+
+
+
+TEXT_ID_PREFIXES = ['phil','lit']
+
+def is_text_id(text_id):
+    return text_id.split('/')[0] in TEXT_ID_PREFIXES
+
+def is_slice_id(slice_id):
+    return '__' in slice_id
+
+def get_slice_ids(query_or_df_or_text_ids):
+    if isinstance(query_or_df_or_text_ids, list):
+        id_l = query_or_df_or_text_ids
+        if is_text_id(id_l[0]):
+            return get_texts_slice_ids(query_or_df_or_text_ids)
+        else:
+            return id_l
+
+    if isinstance(query_or_df_or_text_ids, str):
+        if is_text_id(query_or_df_or_text_ids):
+            return get_text_slice_ids(query_or_df_or_text_ids)
+        elif is_slice_id(query_or_df_or_text_ids):
+            return [query_or_df_or_text_ids]
+        else:
+            query = query_or_df_or_text_ids
+            df_meta = get_corpus_metadata()
+            df_smpl = df_meta.query(query)
+            return get_slice_ids(df_smpl.index.tolist())
+    
+    if isinstance(query_or_df_or_text_ids, pd.DataFrame):
+        df = query_or_df_or_text_ids.reset_index()
+        if 'slice_id' in df.columns:
+            return df['slice_id'].tolist()
+        if 'text_id' in df.columns:
+            return get_texts_slice_ids(df['text_id'].tolist())
+        if 'id' in df.columns:
+            id_l = df['id'].tolist()
+            idx = id_l[0]
+            if is_slice_id(idx):
+                return id_l
+            elif is_text_id(idx):
+                return get_text_slice_ids(id_l)
+
+    return []
+
+def get_texts_slice_ids(text_ids):
+    return [slice_id for text_id in text_ids for slice_id in get_text_slice_ids(text_id)]
+
+def get_random_doc():
+    from .features import get_parsed_slice_ids
+    ids = get_parsed_slice_ids()
+    id = random.choice(ids)
+    docstr = STASH_SLICES_NLP[id]
+    doc = stanza.Document.from_serialized(docstr)
+    return doc

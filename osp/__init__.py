@@ -1,4 +1,5 @@
 # Core imports
+import re
 import json
 import random
 import numpy as np
@@ -40,4 +41,4 @@ from .statistics import *
 from .classify import *
 from .passages import *
 from .sentences import *
-
+from .examples import *

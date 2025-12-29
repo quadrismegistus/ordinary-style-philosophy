@@ -11,12 +11,14 @@ from utils import *
 about_page = st.Page("pages/About.py", title="About", icon=":material/info:")
 custom_page = st.Page("pages/Custom.py", title="Custom Input", icon=":material/edit_note:")
 features_page = st.Page("pages/Features.py", title="Feature Explorer", icon=":material/local_pizza:")
-feature_comp_page = st.Page("pages/FeatureComparison.py", title="Feature Comparison", icon=":material/compare:")
+feature_comp_page = st.Page("pages/FeatureComparison.py", title="Most Distinctive Features", icon=":material/compare:")
 predict_page = st.Page("pages/Predictions.py", title="Predictions", icon=":material/psychology_alt:")
 passages_page = st.Page("pages/Passages.py", title="Passages", icon=":material/visibility:")
 sample_page = st.Page("pages/Sampling.py", title="Samples", icon=":material/model_training:")
+sentence_page = st.Page("pages/Sentence.py", title="Sentence Viewer", icon=":material/text_snippet:")
 
 pages = {
+
     "Info": [
         about_page,
     ],
@@ -26,6 +28,7 @@ pages = {
     "Features": [
         features_page,
         feature_comp_page,
+        sentence_page,
     ],
     "Predictions": [
         predict_page,
@@ -40,5 +43,8 @@ pages = {
 pg = st.navigation(pages)
 
 st.set_page_config(page_title="Ordinary Style Philosophy", layout="wide")
+
+# Initialize and render the status window in the sidebar
+get_status_window().render()
 
 pg.run()
