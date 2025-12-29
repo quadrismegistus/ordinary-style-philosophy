@@ -238,25 +238,26 @@ def classify_then_predict_comparisons(
         l_feats.append(df_feats.assign(comparison=comparison_name))
         d_models[comparison_name] = models
     odf_preds, odf_feats = pd.concat(l_preds), pd.concat(l_feats)
-    odf_feats["group1"] = [x.split(" vs ")[0] for x in odf_feats["comparison"]]
-    odf_feats["group2"] = [x.split(" vs ")[1] for x in odf_feats["comparison"]]
+    # odf_feats["group1"] = [x.split(" vs ")[0] for x in odf_feats["comparison"]]
+    # odf_feats["group2"] = [x.split(" vs ")[1] for x in odf_feats["comparison"]]
 
-    odf_feats["score_mean_diff"] = odf_feats["score_mean1"] - odf_feats["score_mean2"]
-    odf_feats["score_mean_diff_abs"] = np.abs(odf_feats["score_mean_diff"])
-    odf_feats["score_mean_diff_pct"] = (
-        odf_feats["score_mean_diff"] / odf_feats["score_mean2"]
-    )
-    odf_feats["score_mean_div"] = odf_feats["score_mean1"] / odf_feats["score_mean2"]
-    odf_feats["score_mean_div_abs"] = np.abs(odf_feats["score_mean_div"])
-    odf_feats["score_z_diff"] = odf_feats["score_z1"] - odf_feats["score_z2"]
-    odf_feats["score_z_diff_abs"] = np.abs(odf_feats["score_z_diff"])
-    odf_feats["score_z_diff_pct"] = odf_feats["score_z_diff"] / odf_feats["score_z2"]
-    odf_feats["score_z_div"] = odf_feats["score_z1"] / odf_feats["score_z2"]
-    odf_feats["score_z_div_abs"] = np.abs(odf_feats["score_z_div"])
+    # print(odf_feats.columns)
+    # odf_feats["score_mean_diff"] = odf_feats["score_mean1"] - odf_feats["score_mean2"]
+    # odf_feats["score_mean_diff_abs"] = np.abs(odf_feats["score_mean_diff"])
+    # odf_feats["score_mean_diff_pct"] = (
+    #     odf_feats["score_mean_diff"] / odf_feats["score_mean2"]
+    # )
+    # odf_feats["score_mean_div"] = odf_feats["score_mean1"] / odf_feats["score_mean2"]
+    # odf_feats["score_mean_div_abs"] = np.abs(odf_feats["score_mean_div"])
+    # odf_feats["score_z_diff"] = odf_feats["score_z1"] - odf_feats["score_z2"]
+    # odf_feats["score_z_diff_abs"] = np.abs(odf_feats["score_z_diff"])
+    # odf_feats["score_z_diff_pct"] = odf_feats["score_z_diff"] / odf_feats["score_z2"]
+    # odf_feats["score_z_div"] = odf_feats["score_z1"] / odf_feats["score_z2"]
+    # odf_feats["score_z_div_abs"] = np.abs(odf_feats["score_z_div"])
 
-    odf_feats["feat_name"] = [x.split("_", 1)[-1] for x in odf_feats.feature]
-    odf_feats["feat_type"] = [x.split("_")[0] for x in odf_feats.feature]
-    odf_feats.sort_values("weight", ascending=False, inplace=True)
+    # odf_feats["feat_name"] = [x.split("_", 1)[-1] for x in odf_feats.feature]
+    # odf_feats["feat_type"] = [x.split("_")[0] for x in odf_feats.feature]
+    # odf_feats.sort_values("weight", ascending=False, inplace=True)
     return (odf_preds, odf_feats) if not return_models else (odf_preds, odf_feats, d_models)
 
 

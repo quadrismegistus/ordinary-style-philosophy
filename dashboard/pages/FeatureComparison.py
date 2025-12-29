@@ -33,6 +33,13 @@ for (name_a, query_a), (name_b, query_b) in COMPARISONS:
     )
 DEFAULT_COMPARISON = DEFAULT_COMPARISONS[0]
 
+
+def _load_saved_comparisons():
+    try:
+        return {k: STASH_DASHBOARD_COMPARISONS[k] for k in STASH_DASHBOARD_COMPARISONS.keys()}
+    except Exception:
+        return {}
+
 st.set_page_config(page_title="Most Distinctive Features", layout="wide")
 
 topcol1, topcol2 = st.columns(2)
@@ -78,7 +85,23 @@ ls = LocalStorage()
 saved_data = ls.getItem("osp_comparison_groups")
 
 # 3. Build options list
-comparison_options = DEFAULT_COMPARISONS
+comparison_options = list(DEFAULT_COMPARISONS)
+
+# 3a. Add stash comparisons
+stash_comps = _load_saved_comparisons()
+for name, comp in sorted(stash_comps.items()):
+    g1 = comp.get("group_a", {}) if isinstance(comp, dict) else {}
+    g2 = comp.get("group_b", {}) if isinstance(comp, dict) else {}
+    if not g1 or not g2:
+        continue
+    label = comp.get("name") or f"{g1.get('name','G1')} vs {g2.get('name','G2')}"
+    comparison_options.append(
+        {
+            "label": f"{label} (stash)",
+            "group_a": g1,
+            "group_b": g2,
+        }
+    )
 
 if saved_data and isinstance(saved_data, dict):
     g1 = saved_data.get("group_a", {})
@@ -87,13 +110,45 @@ if saved_data and isinstance(saved_data, dict):
         label = f"{g1.get('name', 'Group 1')} vs {g2.get('name', 'Group 2')} (Saved)"
         comparison_options.append({"label": label, "group_a": g1, "group_b": g2})
 
+# 4. Check URL parameters to set initial selection or add URL-based option
+q_a_url = st.query_params.get("q_a")
+q_b_url = st.query_params.get("q_b")
+n_a_url = st.query_params.get("n_a")
+n_b_url = st.query_params.get("n_b")
+
+initial_index = 0
+if q_a_url and q_b_url:
+    # Check if these queries match an existing option
+    match_idx = next((i for i, opt in enumerate(comparison_options) 
+                      if opt["group_a"]["query_str"] == q_a_url and opt["group_b"]["query_str"] == q_b_url), None)
+    
+    if match_idx is not None:
+        initial_index = match_idx
+    else:
+        # Add a new transient option from the URL parameters
+        url_opt = {
+            "label": f"{n_a_url or 'G1'} vs {n_b_url or 'G2'} (URL)",
+            "group_a": {"name": n_a_url or "G1", "query_str": q_a_url},
+            "group_b": {"name": n_b_url or "G2", "query_str": q_b_url},
+        }
+        comparison_options.append(url_opt)
+        initial_index = len(comparison_options) - 1
+
 with topcol2:
-    # 4. Display dropdown
+    # 5. Display dropdown
     selected_comparison = st.selectbox(
         "Select Comparison",
         options=comparison_options,
+        index=initial_index,
         format_func=lambda x: x["label"],
     )
+    
+    # Update URL parameters when selection changes
+    if selected_comparison:
+        st.query_params["q_a"] = selected_comparison["group_a"]["query_str"]
+        st.query_params["q_b"] = selected_comparison["group_b"]["query_str"]
+        st.query_params["n_a"] = selected_comparison["group_a"]["name"]
+        st.query_params["n_b"] = selected_comparison["group_b"]["name"]
 
 midcol1, midcol2 = st.columns(2)
 
@@ -153,6 +208,8 @@ if selected_comparison:
             try:
                 # Use the status window to capture stdout
                 with status_window.capture("Calculating feature statistics"):
+                    with logmap(f"logmapping"):
+                        print('done!!')
                     df_smpl_feats = (
                         get_balanced_slice_sample_feats(
                             groups_train, with_diff_rows=True
@@ -178,6 +235,7 @@ if selected_comparison:
                 )
 
                 with status_window.capture("Fetching slice IDs and examples"):
+                    print("Getting slice IDs...")
                     slice_ids_g1 = get_slice_ids(q_a)
                     slice_ids_g2 = get_slice_ids(q_b)
 
@@ -226,7 +284,10 @@ if selected_comparison:
             journal = meta.get("journal", "Unknown")
             signature = f'—{author}, "{title}", <i>{journal}</i> ({year})'
             html = ex.get("eg_html")
+            word_id = ex.get("word_id")
             href_sent = f'/Sentence?slice_id={slice_id}&sent_id={ex.get("sent_id")+1}'
+            if word_id is not None:
+                href_sent += f'&word_id={word_id}'
             out = f'<a href="{href_sent}" target="_blank">{html}</a> <a href="{href}" target="_blank" style="vertical-align: bottom; text-decoration: none; color: inherit; "><br/><small>{signature}</small></a>'
             return out
 

@@ -709,7 +709,7 @@ def get_balanced_slice_sample_feats(groups_train, df_smpl=None, sample_size=None
         balance=balance
     ) if df_smpl is None else df_smpl
 
-    print(f"Loading features for {len(df_smpl)} slices...")
+    print(f"Loading features for {len(df_smpl):,} slices...")
     df_all_feats_z = get_all_feats(normalize=True)
     df_all_feats_raw = get_all_feats(normalize=False)
 
@@ -947,7 +947,7 @@ def get_feat_group_egs(feats, groups=None, num_egs=10):
     return pd.concat([odf1.assign(group=name1), odf2.assign(group=name2)])
 
 
-# @STASH_FEAT_EG_CACHE.stashed_result
+@STASH_FEAT_EG_CACHE.stashed_result
 def get_slice_feat_egs(slice_ids=None, feats=None, num_egs=10, max_slices=1000):
     if slice_ids is None:
         slice_ids = get_parsed_slice_ids()

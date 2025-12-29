@@ -121,7 +121,17 @@ def get_text_id2slice_ids():
     return out
 
 
-def get_balanced_slice_sample(groups_train, sample_size=None, balance=True, verbose=True):
+def _sample_ids(ids, sample_size=None, replace=False):
+    if sample_size is None:
+        return ids
+    if replace:
+        return random.choices(ids, k=sample_size) if ids else []
+    # Without replacement, cap at available size to avoid ValueError
+    k = min(sample_size, len(ids))
+    return random.sample(ids, k) if ids else []
+
+
+def get_balanced_slice_sample(groups_train, sample_size=None, balance=True, replace=False, verbose=True):
     name1, query1 = groups_train[0]
     name2, query2 = groups_train[1]
 
@@ -137,11 +147,16 @@ def get_balanced_slice_sample(groups_train, sample_size=None, balance=True, verb
 
     if balance:
         min_size = min(len(slice_ids_g1), len(slice_ids_g2))
-        if sample_size is None or sample_size > min_size:
-            sample_size = min_size
-
-        slice_ids_g1 = random.sample(slice_ids_g1, sample_size)
-        slice_ids_g2 = random.sample(slice_ids_g2, sample_size)
+        # Default to the smallest group if no explicit sample_size is provided.
+        target_size = min_size if sample_size is None else sample_size
+        # If no replacement, cap at available to avoid ValueError.
+        target_size = min(target_size, min_size) if not replace else target_size
+        slice_ids_g1 = _sample_ids(slice_ids_g1, sample_size=target_size, replace=replace)
+        slice_ids_g2 = _sample_ids(slice_ids_g2, sample_size=target_size, replace=replace)
+    elif sample_size is not None:
+        # Unbalanced sampling: respect sample_size independently per group.
+        slice_ids_g1 = _sample_ids(slice_ids_g1, sample_size=sample_size, replace=replace)
+        slice_ids_g2 = _sample_ids(slice_ids_g2, sample_size=sample_size, replace=replace)
 
     df_slice_ids_g1 = pd.DataFrame(slice_ids_g1, columns=['slice_id']).assign(_target=name1)
     df_slice_ids_g2 = pd.DataFrame(slice_ids_g2, columns=['slice_id']).assign(_target=name2)

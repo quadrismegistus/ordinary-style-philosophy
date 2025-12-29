@@ -10,16 +10,20 @@ if PATH_DASHBOARD not in sys.path:
 
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from collections import Counter
 import plotly.express as px
 from streamlit_local_storage import LocalStorage
 from utils import *
+from osp import (
+    STASH_DASHBOARD_GROUPS,
+    STASH_DASHBOARD_COMPARISONS,
+    COMPARISONS,
+)
 
 st.set_page_config(page_title="Classification", layout="wide")
 ls = LocalStorage()
 
-st.title("Classification")
-st.caption("Select two groups to train a classifier (UI only for now).")
 
 
 @st.cache_data
@@ -41,104 +45,101 @@ def load_all_slice_ids():
     return get_all_text_slice_ids()
 
 
-def _get_options(df, col):
-    if col not in df.columns:
-        return []
-    opts = sorted([x for x in df[col].dropna().unique().tolist() if str(x).strip()])
-    return opts
+def load_saved_groups():
+    try:
+        return {k: STASH_DASHBOARD_GROUPS[k] for k in STASH_DASHBOARD_GROUPS.keys()}
+    except Exception:
+        return {}
 
 
-def _vals_to_query_in(col: str, vals):
-    """
-    Build a self-contained pandas DataFrame.query() clause like:
-      discipline in ['Philosophy', 'Literature']
-
-    Important: get_balanced_cv_data does df_meta.query(query_str) directly, so the
-    query must NOT rely on @variables (no local_dict injection).
-    """
-    if not vals:
-        return None
-    # Use repr() to safely quote strings (handles apostrophes, etc.)
-    vals_lit = "[" + ", ".join(repr(v) for v in vals) + "]"
-    return f"{col} in {vals_lit}"
+def _load_saved_comparisons():
+    try:
+        return {k: STASH_DASHBOARD_COMPARISONS[k] for k in STASH_DASHBOARD_COMPARISONS.keys()}
+    except Exception:
+        return {}
 
 
-def build_metadata_query(discipline=None, period=None, journal=None):
-    clauses = []
-    for col, vals in [
-        ("discipline", discipline or []),
-        ("period", period or []),
-        ("journal", journal or []),
-    ]:
-        clause = _vals_to_query_in(col, vals)
-        if clause:
-            clauses.append(clause)
-    return " and ".join(sorted(clauses)) if clauses else ""
+def _save_comparison(name: str, payload: dict):
+    STASH_DASHBOARD_COMPARISONS[name] = payload
 
 
-def group_selector(df_meta: pd.DataFrame, title: str, key_prefix: str):
-    st.subheader(title)
+def _seed_comparisons_from_constants(df_meta: pd.DataFrame):
+    """Seed default groups/comparisons from osp.constants.COMPARISONS."""
+    seeded = []
 
-    group_name = st.text_input("Group Name", value=title, key=f"{key_prefix}_name")
+    def _save_group_payload(name: str, query_str: str):
+        try:
+            df_filtered = run_query(df_meta, query_str)
+            n_texts = int(len(df_filtered))
+        except Exception:
+            n_texts = 0
+        payload = {
+            "name": name,
+            "query_str": query_str or "1==1",
+            "query_struct": {},
+            "saved_at": datetime.utcnow().isoformat() + "Z",
+            "n_texts": n_texts,
+        }
+        STASH_DASHBOARD_GROUPS[name] = payload
 
-    discipline_opts = _get_options(df_meta, "discipline")
-    period_opts = _get_options(df_meta, "period")
-    journal_opts = _get_options(df_meta, "journal")
+    for g1, g2 in COMPARISONS:
+        name_a, query_a = g1
+        name_b, query_b = g2
 
-    col1,col2,col3 = st.columns([3,3,4])
+        _save_group_payload(name_a, query_a)
+        _save_group_payload(name_b, query_b)
 
-    with col1:
-        sel_discipline = st.multiselect(
-            "Discipline",
-            options=discipline_opts,
-            default=["Philosophy" if key_prefix == "grp_a" else "Literature"],
-            key=f"{key_prefix}_discipline",
-        )
-    with col2:
-        sel_period = st.multiselect(
-            "Period",
-            options=period_opts,
-            default=[],
-            key=f"{key_prefix}_period",
-        )
+        comp_name = f"{name_a} vs {name_b}"
+        comp_payload = {
+            "name": comp_name,
+            "group_a": {"name": name_a, "query_str": query_a, "query_struct": {}},
+            "group_b": {"name": name_b, "query_str": query_b, "query_struct": {}},
+            "saved_at": datetime.utcnow().isoformat() + "Z",
+        }
+        _save_comparison(comp_name, comp_payload)
+        seeded.append(comp_name)
+    return seeded
 
-    with col3:
-        sel_journal = st.multiselect(
-            "Journal",
-            options=journal_opts,
-            default=[],
-            key=f"{key_prefix}_journal",
-        )
-    query_struct = {
-        "discipline": sel_discipline,
-        "period": sel_period,
-        "journal": sel_journal,
-    }
-    query_str = build_metadata_query(
-        discipline=sel_discipline, period=sel_period, journal=sel_journal
+
+def select_saved_group(title: str, key_prefix: str, saved_groups: dict):
+    # st.subheader(title)
+    names = sorted(saved_groups.keys())
+    if not names:
+        st.info("No saved groups found. Create one on the Groups page.")
+        return "", {}, ""
+
+    default_index = 0 if key_prefix == "grp_a" else (1 if len(names) > 1 else 0)
+    selected_name = st.selectbox(
+        title,
+        options=names,
+        index=default_index,
+        key=f"{key_prefix}_select",
     )
-    return group_name, query_struct, query_str
-
-
-df_meta = load_metadata()
-
-left, mid, right = st.columns([5,1,5], vertical_alignment="center", gap="small")
-
-with left:
-    name_a, query_a_struct, query_a_str = group_selector(df_meta, "Group 1", "grp_a")
-    if query_a_str:
-        st.code(query_a_str)
-
-with right:
-    name_b, query_b_struct, query_b_str = group_selector(df_meta, "Group 2", "grp_b")
-    if query_b_str:
-        st.code(query_b_str)
-
+    data = saved_groups.get(selected_name, {}) if selected_name else {}
+    query_str = data.get("query_str", "") if isinstance(data, dict) else ""
+    query_struct = data.get("query_struct", {}) if isinstance(data, dict) else {}
+    # st.code(query_str or "True")
+    return selected_name or title, query_struct, query_str
 
 
 def run_query(df: pd.DataFrame, query_str: str):
-    q = query_str if query_str else "True"
+    q = query_str if query_str else "1==1"
     return df.query(q)
+
+
+df_meta = load_metadata()
+saved_groups = load_saved_groups()
+
+if not saved_groups:
+    st.warning("No saved groups found. Create a group on the Groups page first.")
+    st.stop()
+
+
+left, right = st.columns(2)
+
+with left:
+    st.title("Comparisons")
+    st.caption("Select two groups to compare.")
 
 
 def get_period_text_dist(df_sel: pd.DataFrame):
@@ -222,41 +223,95 @@ def get_slice_stats(
     }
 
 @st.cache_data
-def load_slice_sample(query_a: str, query_b: str):
+def load_slice_sample(
+    query_a: str,
+    query_b: str,
+    sample_size: int | None,
+    balance: bool,
+    replace: bool,
+    label_a: str,
+    label_b: str,
+):
     """
     Uses osp.slices.get_balanced_slice_sample() to define a balanced sample.
     Returns a slice-level DataFrame with metadata + [text_id, slice_id, _target].
     """
-    q1 = query_a if query_a else "True"
-    q2 = query_b if query_b else "True"
-    groups_train = [("Group 1", q1), ("Group 2", q2)]
-    return get_balanced_slice_sample(groups_train, verbose=False)
+    q1 = query_a if query_a else "1==1"
+    q2 = query_b if query_b else "1==1"
+    groups_train = [(label_a, q1), (label_b, q2)]
+    return get_balanced_slice_sample(
+        groups_train,
+        sample_size=sample_size,
+        balance=balance,
+        replace=replace,
+        verbose=False,
+    )
 
 
 
 
 
-# col1, col2, col3 = st.columns([5, 1, 5])
-with mid:
-    submit = st.button("Compare", type="primary")
-    save = st.button("Save")
+with right:
+    name_a, query_a_struct, query_a_str = select_saved_group("Group 1", "grp_a", saved_groups)
+    name_b, query_b_struct, query_b_str = select_saved_group("Group 2", "grp_b", saved_groups)
+    label_a = name_a or "Group 1"
+    label_b = name_b or "Group 2"
+    comparison_name = st.text_input(
+        "Comparison name",
+        value=f"{label_a} vs {label_b}",
+        help="Name to save this comparison in HashStash.",
+    )
+
+    # if st.button("Seed default comparisons (from constants)", use_container_width=True):
+    #     try:
+    #         seeded = _seed_comparisons_from_constants(df_meta)
+    #         st.success(f"Seeded {len(seeded)} comparisons.")
+    #     except Exception as e:
+    #         st.error(f"Could not seed comparisons: {e}")
+
+    # sample_size_input = st.number_input(
+    #     "Sample size per group (0 = auto)",
+    #     min_value=0,
+    #     value=0,
+    #     step=50,
+    #     help="If balanced, defaults to the smaller group. If unbalanced, 0 keeps all.",
+    # )
+    # balance = st.checkbox(
+    #     "Balance groups (same # of slices each)", value=True, help="Use equal counts from both groups."
+    # )
+    # replace = st.checkbox(
+    #     "Sample with replacement",
+    #     value=False,
+    #     help="Allow repeated slices if sample size exceeds available.",
+    # )
+    col1, col2 = st.columns(2)
+    with col1:
+        submit = st.button("Compare", type="secondary", use_container_width=True)
+    with col2:
+        save = st.button("Save comparison", use_container_width=True)
 
 if save:
     # Save both group names and their queries to localStorage
     saved_data = {
+        "name": comparison_name.strip() or f"{label_a} vs {label_b}",
         "group_a": {
-            "name": name_a,
+            "name": label_a,
             "query_str": query_a_str,
-            "query_struct": query_a_struct
+            "query_struct": query_a_struct,
         },
         "group_b": {
-            "name": name_b,
+            "name": label_b,
             "query_str": query_b_str,
-            "query_struct": query_b_struct
-        }
+            "query_struct": query_b_struct,
+        },
+        "saved_at": datetime.utcnow().isoformat() + "Z",
     }
+    try:
+        _save_comparison(saved_data["name"], saved_data)
+        st.success(f"Comparison '{saved_data['name']}' saved to HashStash.")
+    except Exception as e:
+        st.error(f"Could not save comparison: {e}")
     ls.setItem("osp_comparison_groups", saved_data)
-    st.success(f"Groups '{name_a}' and '{name_b}' saved to localStorage!")
 
 if submit:
     try:
@@ -270,19 +325,32 @@ if submit:
     text_id2nslices_parsed = get_parsed_slice_counts_by_text()
 
     # Use get_balanced_slice_sample to define the *sample* (slice-level metadata)
+    # sample_size = int(sample_size_input) if sample_size_input and sample_size_input > 0 else None
+    sample_size = None
+    balance = True
+    replace = False
+
     try:
-        df_slice_sample = load_slice_sample(query_a=query_a_str, query_b=query_b_str)
+        df_slice_sample = load_slice_sample(
+            query_a=query_a_str,
+            query_b=query_b_str,
+            sample_size=sample_size,
+            balance=balance,
+            replace=replace,
+            label_a=label_a,
+            label_b=label_b,
+        )
     except Exception as e:
         st.error(f"Sampler error (get_balanced_slice_sample): {e}")
         df_slice_sample = pd.DataFrame()
 
     df_slice_g1 = (
-        df_slice_sample.query('_target=="Group 1"').copy()
+        df_slice_sample[df_slice_sample["_target"] == label_a].copy()
         if not df_slice_sample.empty and "_target" in df_slice_sample.columns
         else pd.DataFrame()
     )
     df_slice_g2 = (
-        df_slice_sample.query('_target=="Group 2"').copy()
+        df_slice_sample[df_slice_sample["_target"] == label_b].copy()
         if not df_slice_sample.empty and "_target" in df_slice_sample.columns
         else pd.DataFrame()
     )
@@ -350,6 +418,8 @@ if submit:
     )
 
     st.session_state["classification_last_run"] = {
+        "group_a_name": label_a,
+        "group_b_name": label_b,
         "groups": {
             "group_a": {
                 "query": query_a_str,
@@ -401,6 +471,28 @@ if submit:
 
 run_data = st.session_state.get("classification_last_run")
 if run_data:
+    label_a = run_data.get("group_a_name", "Group 1")
+    label_b = run_data.get("group_b_name", "Group 2")
+    saved_comparisons = _load_saved_comparisons()
+    if saved_comparisons:
+        st.markdown("#### Saved comparisons")
+        comp_names = sorted(saved_comparisons.keys())
+        selected_comp = st.selectbox(
+            "Saved comparisons (HashStash)",
+            options=[""] + comp_names,
+            format_func=lambda x: x or "Select comparison",
+        )
+        if selected_comp:
+            comp = saved_comparisons.get(selected_comp, {})
+            st.info(
+                f"Name: {comp.get('name')}\n\n"
+                f"Group A: {comp.get('group_a', {}).get('name')}\n"
+                f"Query A: {comp.get('group_a', {}).get('query_str')}\n\n"
+                f"Group B: {comp.get('group_b', {}).get('name')}\n"
+                f"Query B: {comp.get('group_b', {}).get('query_str')}\n\n"
+                f"Saved at: {comp.get('saved_at')}"
+            )
+
     def fmt_int(x):
         try:
             return f"{int(x):,}"
@@ -457,8 +549,8 @@ if run_data:
             y="count",
             color="group",
             barmode="group",
-            category_orders={"period": period_order, "group": ["Group 1", "Group 2"]},
-            color_discrete_map={"Group 1": "#2166ac", "Group 2": "#b2182b"},
+            category_orders={"period": period_order, "group": [label_a, label_b]},
+            color_discrete_map={label_a: "#2166ac", label_b: "#b2182b"},
             text="count",
             # title=title,
             template=template,
@@ -502,12 +594,12 @@ if run_data:
     def render_metric_row(label: str, g1_val: int, g2_val: int, *, signed_delta: bool = True):
         c1, c2, c3 = st.columns(3, gap="large")
         with c1:
-            st.metric(f'Group 1', fmt_int(g1_val))
+            st.metric(label_a, fmt_int(g1_val))
         with c2:
-            st.metric(f'Group 2', fmt_int(g2_val))
+            st.metric(label_b, fmt_int(g2_val))
         with c3:
             delta_val = int(g1_val) - int(g2_val)
-            st.metric(f'Δ (G1 - G2)', fmt_signed_int(delta_val) if signed_delta else fmt_int(delta_val))
+            st.metric('Δ (G1 - G2)', fmt_signed_int(delta_val) if signed_delta else fmt_int(delta_val))
 
     def build_section_period_longs(section_key: str):
         sec = run_data.get(section_key, {}) or {}
@@ -518,22 +610,22 @@ if run_data:
 
         df_texts_long = pd.concat(
             [
-                to_period_df(g1, "Group 1", "df_period_texts", "count"),
-                to_period_df(g2, "Group 2", "df_period_texts", "count"),
+                to_period_df(g1, label_a, "df_period_texts", "count"),
+                to_period_df(g2, label_b, "df_period_texts", "count"),
             ],
             ignore_index=True,
         )
         df_parsed_slices_long = pd.concat(
             [
-                to_period_df(s1, "Group 1", "df_period_parsed_slices", "count"),
-                to_period_df(s2, "Group 2", "df_period_parsed_slices", "count"),
+                to_period_df(s1, label_a, "df_period_parsed_slices", "count"),
+                to_period_df(s2, label_b, "df_period_parsed_slices", "count"),
             ],
             ignore_index=True,
         )
         df_total_slices_long = pd.concat(
             [
-                to_period_df(s1, "Group 1", "df_period_total_slices", "count"),
-                to_period_df(s2, "Group 2", "df_period_total_slices", "count"),
+                to_period_df(s1, label_a, "df_period_total_slices", "count"),
+                to_period_df(s2, label_b, "df_period_total_slices", "count"),
             ],
             ignore_index=True,
         )
@@ -554,17 +646,18 @@ if run_data:
         # with h3:
         #     st.markdown("#### G1 - G2")
 
+        st.markdown("#### Number of parsed passages (1Kw) in corpus")
+        render_metric_row("Num Parsed Slices", g1_g_parsed, g2_g_parsed)
+        plot_group_hist(corpus_parsed_long, "Parsed slices by period", key="corpus_parsed_slices_by_period")
+        
+        # st.markdown("#### Number of passages (1Kw) in corpus")
+        # render_metric_row("Num Slices", g1_g_slices, g2_g_slices)
+        # plot_group_hist(corpus_all_long, "All slices by period", key="corpus_all_slices_by_period")
+
         st.markdown("#### Number of texts in corpus")
         render_metric_row("Num Texts", g1_g_texts, g2_g_texts)
         plot_group_hist(corpus_texts_long, "Texts by period", key="corpus_texts_by_period")
-
-        st.markdown("#### Number of passages (1K words) in corpus")
-        render_metric_row("Num Slices", g1_g_slices, g2_g_slices)
-        plot_group_hist(corpus_all_long, "All slices by period", key="corpus_all_slices_by_period")
-
-        st.markdown("#### Number of parsed passages in corpus")
-        render_metric_row("Num Parsed Slices", g1_g_parsed, g2_g_parsed)
-        plot_group_hist(corpus_parsed_long, "Parsed slices by period", key="corpus_parsed_slices_by_period")
+        
 
     with top_sample:
         st.markdown("### Sample")
@@ -576,17 +669,16 @@ if run_data:
         # with h3:
         #     st.markdown("#### G1 - G2")
 
+        st.markdown("#### Number of parsed passages (1Kw) in sample")
+        render_metric_row("Num Parsed Slices", g1_s_parsed, g2_s_parsed)
+        plot_group_hist(sample_parsed_long, "Parsed slices by period", key="sample_parsed_slices_by_period")
+
+        # st.markdown("#### Number of passages (1Kw) in sample")
+        # render_metric_row("Num Slices", g1_s_slices, g2_s_slices)
+        # plot_group_hist(sample_all_long, "All slices by period", key="sample_all_slices_by_period")
+    
         st.markdown("#### Number of texts in sample")
         render_metric_row("Num Texts", g1_s_texts, g2_s_texts)
         plot_group_hist(sample_texts_long, "Texts by period", key="sample_texts_by_period")
 
-        st.markdown("#### Number of passages (1K words) in sample")
-        render_metric_row("Num Slices", g1_s_slices, g2_s_slices)
-        plot_group_hist(sample_all_long, "All slices by period", key="sample_all_slices_by_period")
-
-        st.markdown("#### Number of parsed passages (1K words) in sample")
-        render_metric_row("Num Parsed Slices", g1_s_parsed, g2_s_parsed)
-        plot_group_hist(sample_parsed_long, "Parsed slices by period", key="sample_parsed_slices_by_period")
-
-    
 

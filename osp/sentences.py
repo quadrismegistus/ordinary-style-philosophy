@@ -203,7 +203,7 @@ def render_sent_displacy(
         feat_name = f"pos_{tag_elem.text}"
         color = get_color(feat_name, color_by=color_by, df_feats=df_feats)
         tag_elem["style"] = (
-            f"paint-order: stroke fill; stroke: {color}; stroke-width: 1em; stroke-linecap: round; stroke-linejoin: round; font-size: 1.5em;"
+            f"paint-order: stroke fill; stroke: {color}; stroke-width: .3em; stroke-linecap: round; stroke-linejoin: round; font-size: 1.5em;"
         )
         tag_elem["fill"] = "black"
 
@@ -212,7 +212,7 @@ def render_sent_displacy(
         feat_name = f"deprel_{deprel_elem.text}"
         color = get_color(feat_name, color_by=color_by, df_feats=df_feats)
         deprel_elem["style"] = (
-            f"paint-order: stroke fill; stroke: {color}; stroke-width: .3em; font-size: 1.5em;"
+            f"paint-order: stroke fill; stroke: {color}; stroke-width: .1em; font-size: 1.5em;"
         )
         deprel_elem["fill"] = "black"
 
@@ -282,7 +282,8 @@ def get_sent_html(
         else:
             min_score, max_score = 0, 0
 
-    sent_html = ['<ul style="font-family: \'Source Sans\', sans-serif;">']
+    # sent_html = ['<ul style="font-family: \'Source Sans\', sans-serif;">']
+    sent_html = ['<ul style="font-family: \'Source Sans\', sans-serif; list-style-type: none;">']
 
     clause_df = get_syntax_df(sent)
     word_id2clause_id = dict(zip(clause_df["word_i"] + 1, clause_df["clause_id"]))
@@ -361,12 +362,13 @@ def get_sent_html(
         if this_clause_id != last_clause_id:
             last_clause_depth = clause_id2depth.get(last_clause_id, 0)
             this_clause_depth = clause_id2depth.get(this_clause_id, 0)
-            print(f"this_clause_depth: {this_clause_depth}, last_clause_depth: {last_clause_depth}",word.text)
+            # print(f"this_clause_depth: {this_clause_depth}, last_clause_depth: {last_clause_depth}",word.text)
             if this_clause_depth > last_clause_depth:
                 sent_html.append('<ul>')
             elif this_clause_depth < last_clause_depth:
                 sent_html.append('</ul>')
-            sent_html.append(f'<li style="clear: both; font-family: \'Source Sans\', sans-serif;"><span style="margin-right: 5px; float: left; color:gray;">{this_clause_type} d{this_clause_depth}:</span>')
+            sent_html.append(f'<li style="clear: both; font-family: \'Source Sans\', sans-serif; list-style-type: none;">')
+            # sent_html.append(f'<li style="clear: both; font-family: \'Source Sans\', sans-serif;"><span style="margin-right: 5px; float: left; color:gray;">{this_clause_type} d{this_clause_depth}:</span>')
             last_clause_id = this_clause_id
         sent_html.append(word_span)
     sent_html.append(f'</li></ul>')

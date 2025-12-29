@@ -55,6 +55,11 @@ def get_sentence_from_params():
 
 doc, sent_idx = get_sentence_from_params()
 
+if not doc or not sent_idx:
+    doc = get_random_doc()
+    sent_idx = random.randint(0, len(doc.sentences) - 1)
+
+
 if doc and 0 <= sent_idx < len(doc.sentences):
     sent = doc.sentences[sent_idx]
     
@@ -67,24 +72,18 @@ if doc and 0 <= sent_idx < len(doc.sentences):
     color_column = st.sidebar.selectbox("Color by:", color_options, index=0)
 
     # 4. Sentence HTML (Annotated)
-    sent_html = get_sent_html(sent, color=color_column)
+    word_id = st.query_params.get("word_id")
+    if word_id:
+        try:
+            word_id = int(word_id)
+        except ValueError:
+            word_id = None
+            
+    sent_html = get_sent_html(sent, color=color_column, highlight_word_id=word_id)
     st.markdown(sent_html, unsafe_allow_html=True)
     
     # col1, col2 = st.columns(2)
     
-    
-    # with col2:
-        # 3. Constituency Tree (nltk/svgling)
-    st.subheader("Constituency tree")
-    tree = get_sent_tree(sent)
-    if HAS_SVGLING:
-        svg_obj = svgling.draw_tree(tree)
-        # svgling's _repr_svg_ returns the SVG string
-        st.components.v1.html(svg_obj._repr_svg_(), height=500, scrolling=True)
-    else:
-        st.code(str(tree))
-    
-
 
     # 2. Dependency Tree (displacy SVG)
     st.subheader("Dependency relations")
@@ -110,8 +109,24 @@ if doc and 0 <= sent_idx < len(doc.sentences):
     
 
 
+
+    
+    # with col2:
+        # 3. Constituency Tree (nltk/svgling)
+    st.subheader("Constituency tree")
+    tree = get_sent_tree(sent)
+    if HAS_SVGLING:
+        svg_obj = svgling.draw_tree(tree)
+        # svgling's _repr_svg_ returns the SVG string
+        st.components.v1.html(svg_obj._repr_svg_(), height=500, scrolling=True)
+    else:
+        st.code(str(tree))
+    
+
+
+
 else:
-    st.title("Sentence Analysis")
+    st.title("Sentence")
     st.info("Please provide `slice_id` and `sent_id`, or `txt` via URL parameters.")
     st.write("Examples:")
     st.code("?slice_id=phil/1900-1925/00000001__01&sent_id=1")

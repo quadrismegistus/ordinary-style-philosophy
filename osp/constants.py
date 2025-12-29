@@ -45,7 +45,11 @@ BAD_DEPREL = {"flat"}
 
 # Paths
 PATH_HERE = os.path.dirname(os.path.abspath(__file__))
-PATH_DATA = os.path.abspath(os.path.join(PATH_HERE, "..", "data"))
+PATH_REPO = os.path.abspath(os.path.join(PATH_HERE, ".."))
+PATH_DATA = os.path.join(PATH_REPO, "data")
+PATH_DASHBOARD = os.path.join(PATH_REPO, "dashboard")
+if PATH_DASHBOARD not in sys.path: sys.path.append(PATH_DASHBOARD)
+PATH_PAGES = os.path.join(PATH_DASHBOARD, "pages")
 PATH_DATA_RAW = os.path.join(PATH_DATA, "raw")
 PATH_DATA_STASH = os.path.join(PATH_DATA_RAW, "stash")
 PATH_METADATA = os.path.join(PATH_DATA, "metadata.csv")
@@ -88,7 +92,10 @@ STASH_ALL_TEXT_SLICE_IDS = get_stash('osp_all_text_slice_ids')
 STASH_FEAT_GROUP_EGS = get_stash('osp_feat_group_egs')
 STASH_FEAT_EXAMPLES2 = get_stash('osp_feat_examples2')
 STASH_FEAT_EG_CACHE = get_stash('osp_feat_eg_cache')
+STASH_DASHBOARD_GROUPS = get_stash('osp_dashboard_groups')
+STASH_DASHBOARD_COMPARISONS = get_stash('osp_dashboard_comparisons')
 
+from logmap import logmap
 
 # Wordsets
 WORDSETS = ["top", "content", "non_content"]
@@ -463,3 +470,14 @@ NORMALIZE_CLASSIFY_DATA = True
 
 BAD_SLICE_FEATS += ['phrase_'+k for k in PHRASEFEAT2DESC.keys()]
 MAX_FEATSET_FEATS = 50
+
+DISPLAY_META_FIELDS = [
+    "author",
+    "title",
+    "journal",
+    "year",
+    "discipline",
+    "period",
+    "url",
+    "publisher",
+]
