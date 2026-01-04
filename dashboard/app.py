@@ -12,7 +12,7 @@ about_page = st.Page("pages/About.py", title="About", icon=":material/info:")
 custom_page = st.Page("pages/Custom.py", title="Custom Input", icon=":material/edit_note:")
 features_explore_page = st.Page("pages/Features.py", title="Explorer", icon=":material/local_pizza:")
 feature_comp_page = st.Page("pages/FeatureComparison.py", title="Most Distinctive Features", icon=":material/compare:")
-predict_page = st.Page("pages/Predictions.py", title="Prediction Explorer", icon=":material/psychology_alt:")
+predict_page = st.Page("pages/Predictions.py", title="Explorer", icon=":material/psychology_alt:")
 passages_page = st.Page("pages/Passages.py", title="Passages", icon=":material/visibility:")
 sample_page = st.Page("pages/Sampling.py", title="Samples", icon=":material/model_training:")
 sentence_page = st.Page("pages/Sentence.py", title="Sentences", icon=":material/text_snippet:")
@@ -20,8 +20,8 @@ group_page = st.Page("pages/Groups.py", title="Groups", icon=":material/group:")
 settings_page = st.Page("pages/Settings.py", title="Settings", icon=":material/settings:")
 corpus_info_page = st.Page("pages/CorpusInfo.py", title="Info", icon=":material/menu_book:")
 corpus_data_page = st.Page("pages/CorpusData.py", title="Metadata", icon=":material/menu_book:")
-predict_custom_page = st.Page("pages/Predict.py", title="Predict comparisons", icon=":material/psychology_alt:")
-predict_list_page = st.Page("pages/PredictionsList.py", title="Prediction results", icon=":material/psychology_alt:")
+predict_custom_page = st.Page("pages/Predict.py", title="Predict", icon=":material/psychology_alt:")
+predict_list_page = st.Page("pages/PredictionsList.py", title="Predictions", icon=":material/psychology_alt:")
 
 pages = {
     "Corpus": [
@@ -38,8 +38,8 @@ pages = {
     ],
     "Predictions": [
         predict_custom_page,
-        predict_page,
         predict_list_page,
+        predict_page,
     ],
     "Passages": [
         sentence_page,

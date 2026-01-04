@@ -113,9 +113,8 @@ def get_slice_feat_counts(id, bad_feats=None):
                 out_d[k] = v
     return out_d
 
-
 @cache
-def get_all_feats(normalize=NORMALIZE_FEAT_DATA, feat_types=None, **kwargs):
+def get_all_feats(normalize=NORMALIZE_FEAT_DATA, feat_types=CV_FEAT_TYPES, **kwargs):
     odf = get_all_feats_stashed()
     
     if feat_types:
@@ -956,9 +955,16 @@ def get_feat_group_egs(feats, groups=None, num_egs=10):
     return pd.concat([odf1.assign(group=name1), odf2.assign(group=name2)])
 
 
-# @STASH_FEAT_EG_CACHE.stashed_result
+
 def get_slice_feat_egs(slice_ids=None, feats=None, num_egs=5, max_slices=1000):
+    key = (tuple(slice_ids), tuple(feats), num_egs, max_slices)
+    print(key in STASH_FEAT_EG_CACHE)
+    if key in STASH_FEAT_EG_CACHE:
+        return STASH_FEAT_EG_CACHE[key]
+    
+    
     print('get slice feat egs')
+    print(slice_ids[-3:])
     now = time.time()
     if slice_ids is None:
         slice_ids = get_parsed_slice_ids()
@@ -984,4 +990,6 @@ def get_slice_feat_egs(slice_ids=None, feats=None, num_egs=5, max_slices=1000):
                     egs[feat].append(d)
 
     print(f'get slice feat egs done in {time.time() - now:.2f} seconds')
-    return pd.DataFrame([vx for vl in egs.values() for vx in vl]).sample(frac=1)
+    odf = pd.DataFrame([vx for vl in egs.values() for vx in vl]).sample(frac=1)
+    STASH_FEAT_EG_CACHE[key] = odf
+    return odf

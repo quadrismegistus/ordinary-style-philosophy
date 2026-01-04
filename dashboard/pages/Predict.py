@@ -15,11 +15,23 @@ import pickle
 import subprocess
 import time
 import json
+import random
 from datetime import datetime
 from urllib.parse import urlencode
 from pathlib import Path
 from osp import *
-from utils import setup_sidebar, log_progress
+from utils import (
+    setup_sidebar,
+    log_progress,
+    load_slice_ids,
+    load_slice_feat_examples,
+    load_comparison_stats,
+)
+from dashboard.components import (
+    render_prediction_explorer,
+    render_feature_summary,
+    lookup_examples,
+)
 
 st.set_page_config(page_title="Predict", layout="wide")
 
@@ -289,6 +301,7 @@ if has_url_params:
     url_balance = query_params.get('balance', 'true').lower() == 'true'
     url_replace = query_params.get('replace', 'false').lower() == 'true'
     url_normalize = query_params.get('normalize', 'true').lower() == 'true'
+    url_force = query_params.get('force', 'false').lower() == 'true'
     
     # Load saved groups to get queries
     saved_groups = _load_saved_groups()
@@ -324,6 +337,26 @@ if has_url_params:
     
     # Start or check job
     job_id = get_job_id(job_params)
+    
+    # Handle Force Regeneration
+    if url_force:
+        # Clear session state results
+        if 'predict_df_preds' in st.session_state: del st.session_state['predict_df_preds']
+        if 'predict_df_feats' in st.session_state: del st.session_state['predict_df_feats']
+        
+        # Delete job files
+        try:
+            get_job_path(job_id).unlink(missing_ok=True)
+            get_job_status_path(job_id).unlink(missing_ok=True)
+            get_job_log_path(job_id).unlink(missing_ok=True)
+        except Exception:
+            pass # Ignore errors if files don't exist
+            
+        # Remove force param to prevent loop
+        new_params = query_params.to_dict()
+        if 'force' in new_params: del new_params['force']
+        st.query_params.from_dict(new_params)
+        st.rerun()
     
     if is_job_complete(job_id):
         # Job is complete - load results
@@ -367,6 +400,10 @@ if has_url_params:
         
         st.caption("This page will automatically refresh when complete.")
         
+        if st.button("Force Restart", help="Stop current job and restart."):
+            st.query_params['force'] = 'true'
+            st.rerun()
+        
         # Auto-refresh every 3 seconds
         time.sleep(3)
         st.rerun()
@@ -382,7 +419,13 @@ if has_url_params:
         st.rerun()
     
     # Back link
-    st.markdown("[← Back to configuration](./Predict)")
+    col_back, col_regen = st.columns([1, 1])
+    with col_back:
+        st.markdown("[← Back to configuration](./Predict)")
+    with col_regen:
+        if st.button("Regenerate Results", help="Force a new classification run with these parameters."):
+            st.query_params['force'] = 'true'
+            st.rerun()
 
 else:
     # --- CONFIGURATION MODE: Show form to set up classification ---
@@ -544,6 +587,8 @@ else:
 
     st.stop()  # Stop here in config mode - don't show results section
 
+from dashboard.components import render_prediction_explorer
+
 # --- Display Results ---
 
 if 'predict_df_preds' in st.session_state and 'predict_df_feats' in st.session_state:
@@ -557,7 +602,70 @@ if 'predict_df_preds' in st.session_state and 'predict_df_feats' in st.session_s
     
     # Debug: Show data summary
     st.caption(f"Predictions: {len(df_preds)} rows, {len(df_preds.columns)} cols | Features: {len(df_feats)} rows")
-    results_tab, feats_tab, viz_tab = st.tabs(["Predictions", "Feature Weights", "Visualization"])
+    
+    # --- Prepare Data (Shared across tabs) ---
+    # We'll create an enhanced dataframe with target, correct, and metadata info
+    df_enhanced = df_preds.reset_index().copy()
+    if 'id' not in df_enhanced.columns and 'index' in df_enhanced.columns:
+        df_enhanced = df_enhanced.rename(columns={'index': 'id'})
+    
+    df_enhanced['text_id'] = df_enhanced['id'].astype(str).str.split('__').str[0]
+    
+    # Get probability columns
+    prob_cols = [c for c in df_preds.columns if c.startswith('prob_')]
+    group_names = [c.replace('prob_', '') for c in prob_cols]
+    stored_group_names = st.session_state.get('predict_group_names', group_names)
+    
+    # Determine targets
+    metadata = get_corpus_metadata()
+    saved_groups = _load_saved_groups()
+    text_id_to_target = {}
+    unique_text_ids = df_enhanced['text_id'].unique()
+    for tid in unique_text_ids: text_id_to_target[tid] = 'Unknown'
+
+    for gname in stored_group_names:
+        if gname in saved_groups:
+            query = saved_groups[gname].get('query_str', '')
+            if query and query != '1==1':
+                try:
+                    matching_texts = set(metadata.query(query).index)
+                    for tid in unique_text_ids:
+                        if tid in matching_texts:
+                            text_id_to_target[tid] = gname
+                except Exception: pass
+        elif 'discipline' in metadata.columns:
+             for tid in unique_text_ids:
+                if tid in metadata.index and metadata.loc[tid, 'discipline'] == gname:
+                    text_id_to_target[tid] = gname
+
+    df_enhanced['target'] = df_enhanced['text_id'].map(text_id_to_target)
+    
+    # Calculate correctness
+    def is_correct(row):
+        target = row['target']
+        prob_col = f'prob_{target}'
+        if prob_col in row.index:
+            return row[prob_col] > 0.5
+        return False
+    
+    df_enhanced['correct'] = df_enhanced.apply(is_correct, axis=1)
+    
+    # Merge full metadata for explorer
+    meta_to_merge = metadata[DF_PREDS_METADATA_COLS]
+    df_enhanced = df_enhanced.merge(meta_to_merge, left_on='text_id', right_index=True, how='left')
+
+    group1_name = params.get('group1_name', url_group1)
+    group2_name = params.get('group2_name', url_group2)
+    group1_query = params.get('group1_query', query1)
+    group2_query = params.get('group2_query', query2)
+    groups_train = [
+        (group1_name, group1_query),
+        (group2_name, group2_query),
+    ]
+
+    results_tab, feats_tab, feature_summary_tab, viz_tab, explorer_tab = st.tabs(
+        ["Predictions", "Feature Weights", "Feature Summary", "Visualization", "Prediction Explorer"]
+    )
     
     with results_tab:
         st.markdown("#### Prediction Results")
@@ -565,89 +673,34 @@ if 'predict_df_preds' in st.session_state and 'predict_df_feats' in st.session_s
         # Debug info
         if df_preds.empty:
             st.warning("No prediction data available.")
-            st.write("DataFrame columns:", list(df_preds.columns) if hasattr(df_preds, 'columns') else "N/A")
             st.stop()
-        
-        # Get probability columns and extract group names
-        prob_cols = [c for c in df_preds.columns if c.startswith('prob_')]
         
         if not prob_cols:
-            st.warning(f"No probability columns found. Available columns: {list(df_preds.columns)}")
-            st.dataframe(df_preds.head())
+            st.warning("No probability columns found.")
             st.stop()
-        
-        group_names = [c.replace('prob_', '') for c in prob_cols]
-        
-        # Get stored group names and queries for target lookup
-        stored_group_names = st.session_state.get('predict_group_names', group_names)
-        
-        # Add target column by determining which group's query each slice matches
-        df_preds_display = df_preds.reset_index().copy()
-        
-        # Handle case where 'id' might be in columns instead of index
-        if 'id' not in df_preds_display.columns and 'index' in df_preds_display.columns:
-            df_preds_display = df_preds_display.rename(columns={'index': 'id'})
-        
-        if 'id' not in df_preds_display.columns:
-            st.warning(f"'id' column not found. Available columns: {list(df_preds_display.columns)}")
-            st.dataframe(df_preds_display.head())
-            st.stop()
+            
+        # Use df_enhanced for display logic (it has target/correct)
+        df_preds_display = df_enhanced.copy()
         
         # Check for predict_type column
         if 'predict_type' not in df_preds_display.columns:
-            st.warning(f"'predict_type' column not found. Available columns: {list(df_preds_display.columns)}")
-            st.dataframe(df_preds_display.head())
+            st.warning("'predict_type' column not found.")
             st.stop()
-        
-        df_preds_display['text_id'] = df_preds_display['id'].astype(str).str.split('__').str[0]
-        
-        # Get the queries for the current comparison to determine targets
-        metadata = get_corpus_metadata()
-        
-        # Optimize target determination: Run queries once to find matching texts for each group
-        saved_groups = _load_saved_groups()
-        text_id_to_target = {}
-        
-        # Initialize with 'Unknown' for all text_ids in predictions
-        unique_text_ids = df_preds_display['text_id'].unique()
-        for tid in unique_text_ids:
-            text_id_to_target[tid] = 'Unknown'
-
-        # Pre-calculate which texts belong to which group
-        for gname in stored_group_names:
-            if gname in saved_groups:
-                query = saved_groups[gname].get('query_str', '')
-                if query and query != '1==1':
-                    try:
-                        # Find all text indices that match this group's query
-                        matching_texts = set(metadata.query(query).index)
-                        # Update mapping for texts found in predictions
-                        for tid in unique_text_ids:
-                            if tid in matching_texts:
-                                text_id_to_target[tid] = gname
-                    except Exception:
-                        pass
-            
-            # Fallback: check if group name matches discipline column (legacy behavior)
-            elif 'discipline' in metadata.columns:
-                 for tid in unique_text_ids:
-                    if tid in metadata.index and metadata.loc[tid, 'discipline'] == gname:
-                        text_id_to_target[tid] = gname
-
-        df_preds_display['target'] = df_preds_display['text_id'].map(text_id_to_target)
         
         # Average across runs to get one prediction per slice
         agg_by_slice = df_preds_display.groupby(['id', 'text_id', 'target', 'predict_type'])[prob_cols].mean().reset_index()
         
-        # Calculate accuracy: correct if prob_{target} > 0.5
-        def is_correct(row):
+        # Calculate accuracy: correct if prob_{target} > 0.5 using averaged probabilities
+        def is_correct_agg(row):
             target = row['target']
             prob_col = f'prob_{target}'
             if prob_col in row.index:
                 return row[prob_col] > 0.5
             return False
         
-        agg_by_slice['correct'] = agg_by_slice.apply(is_correct, axis=1)
+        agg_by_slice['correct'] = agg_by_slice.apply(is_correct_agg, axis=1)
+        
+        # ... rest of results tab using agg_by_slice ...
         
         # Filter to valid targets for overall accuracy
         valid_targets_mask = agg_by_slice['target'].isin(group_names)
@@ -717,7 +770,7 @@ if 'predict_df_preds' in st.session_state and 'predict_df_feats' in st.session_s
         
         # Keep only useful columns and sort by target then predict_type
         display_cols = ['predict_type', 'target', 'n', 'accuracy'] + prob_cols
-        df_agg_display = df_agg[[c for c in display_cols if c in df_agg.columns]].copy()
+        df_agg_display = df_agg[[c for c in display_cols if c in df_agg.columns]].query('predict_type=="cv"').copy()
         df_agg_display = df_agg_display.sort_values(['target', 'predict_type'])
         
         # Rename predict_type values
@@ -825,88 +878,77 @@ if 'predict_df_preds' in st.session_state and 'predict_df_feats' in st.session_s
             mime="text/csv"
         )
     
-    with viz_tab:
-        st.markdown("#### Visualizations")
-        
-        viz_type = st.selectbox(
-            "Visualization type:",
-            options=["Probability Distribution", "Feature Weights Bar Chart", "Top Features Comparison"]
-        )
-        
-        if viz_type == "Probability Distribution":
-            prob_cols = [c for c in df_preds.columns if c.startswith('prob_')]
-            if prob_cols:
-                prob_col = st.selectbox("Probability column:", prob_cols)
-                
-                # Histogram of probabilities by predict_type
-                chart = alt.Chart(df_preds.reset_index()).mark_bar(opacity=0.7).encode(
-                    x=alt.X(f'{prob_col}:Q', bin=alt.Bin(maxbins=30), title=prob_col),
-                    y=alt.Y('count():Q', title='Count'),
-                    color=alt.Color('predict_type:N', title='Prediction Type'),
-                    tooltip=['predict_type', 'count()']
-                ).properties(
-                    height=400,
-                    title=f'Distribution of {prob_col}'
-                ).interactive()
-                
-                st.altair_chart(chart, use_container_width=True)
-        
-        elif viz_type == "Feature Weights Bar Chart":
-            n_features = st.slider("Number of features:", 5, 50, 20)
-            
-            # Get top N features by absolute weight
-            df_top = df_feats.copy()
-            df_top['weight_abs'] = df_top['weight'].abs()
-            df_top = df_top.nlargest(n_features, 'weight_abs')
-            
-            chart = alt.Chart(df_top).mark_bar().encode(
-                x=alt.X('weight:Q', title='Weight'),
-                y=alt.Y('feature:N', sort='-x', title='Feature'),
-                color=alt.condition(
-                    alt.datum.weight > 0,
-                    alt.value('#2166ac'),  # Blue for positive
-                    alt.value('#b2182b')   # Red for negative
-                ),
-                tooltip=['feature', alt.Tooltip('weight:Q', format='.4f')]
-            ).properties(
-                height=max(300, n_features * 20),
-                title='Top Feature Weights'
+    with feature_summary_tab:
+        st.markdown("#### Feature Summary")
+        try:
+            df_smpl_feats = load_comparison_stats(tuple(groups_train))
+            df_smpl_feats = df_smpl_feats.sample(frac=1)
+            top_feats_g1 = (
+                df_smpl_feats[df_smpl_feats["target"] == url_group1]
+                .sort_values("feat_rank1")
+                .head(NUM_DISTINCTIVE_FEATS)["feat"]
+                .astype(str)
+                .tolist()
             )
-            
-            st.altair_chart(chart, use_container_width=True)
-        
-        elif viz_type == "Top Features Comparison":
-            # Show mean values for both groups
-            mean_cols = [c for c in df_feats.columns if c.startswith('mean_')]
-            
-            if len(mean_cols) >= 2:
-                n_features = st.slider("Number of features:", 5, 30, 15)
-                
-                df_top = df_feats.nlargest(n_features, 'weight')
-                
-                # Melt for plotting
-                df_melt = df_top.melt(
-                    id_vars=['feature', 'weight'],
-                    value_vars=mean_cols,
-                    var_name='Group',
-                    value_name='Mean Value'
+            top_feats_g2 = (
+                df_smpl_feats[df_smpl_feats["target"] == url_group2]
+                .sort_values("feat_rank2")
+                .head(NUM_DISTINCTIVE_FEATS)["feat"]
+                .astype(str)
+                .tolist()
+            )
+            slice_ids_g1 = load_slice_ids(query1)
+            slice_ids_g2 = load_slice_ids(query2)
+            random.shuffle(slice_ids_g1)
+            random.shuffle(slice_ids_g2)
+            df_egs_g1 = load_slice_feat_examples(slice_ids_g1, top_feats_g1, num_egs=NUM_EG_PER_FEAT)
+            df_egs_g2 = load_slice_feat_examples(slice_ids_g2, top_feats_g2, num_egs=NUM_EG_PER_FEAT)
+            egs_g1 = lookup_examples(df_egs_g1)
+            egs_g2 = lookup_examples(df_egs_g2)
+        except Exception as e:
+            st.error(f"Unable to load feature summary: {e}")
+            df_smpl_feats = pd.DataFrame()
+            egs_g1 = {}
+            egs_g2 = {}
+
+        render_feature_summary(df_smpl_feats, url_group1, url_group2, egs_g1, egs_g2)
+
+    with viz_tab:
+        st.markdown("#### Probability Distributions")
+        if not prob_cols:
+            st.warning("No probability columns found.")
+        else:
+            col_g1, col_g2 = st.columns(2)
+            distribution_configs = [
+                (col_g1, group1_name, f"prob_{group1_name}"),
+                (col_g2, group2_name, f"prob_{group2_name}"),
+            ]
+
+            for col_widget, group_name, prob_col in distribution_configs:
+                col_widget.markdown(f"##### {group_name} slices")
+                if prob_col not in df_enhanced.columns:
+                    col_widget.warning(f"{prob_col} missing from predictions.")
+                    continue
+                subset = df_enhanced[df_enhanced["target"] == group_name]
+                if subset.empty:
+                    col_widget.info("No slices mapped to this group.")
+                    continue
+                chart = (
+                    alt.Chart(subset)
+                    .mark_bar(opacity=0.75)
+                    .encode(
+                        x=alt.X(f"{prob_col}:Q", bin=alt.Bin(maxbins=35), title="Probability"),
+                        y=alt.Y("count():Q", title="Slices"),
+                        tooltip=[alt.Tooltip(f"{prob_col}:Q", format=".2f"), "count()"],
+                    )
+                    .properties(height=320, title=f"{group_name} probability")
+                    .interactive()
                 )
-                df_melt['Group'] = df_melt['Group'].str.replace('mean_', '')
-                
-                chart = alt.Chart(df_melt).mark_bar().encode(
-                    x=alt.X('feature:N', sort='-y', title='Feature'),
-                    y=alt.Y('Mean Value:Q', title='Mean Feature Value'),
-                    color=alt.Color('Group:N', title='Group'),
-                    xOffset='Group:N',
-                    tooltip=['feature', 'Group', alt.Tooltip('Mean Value:Q', format='.4f')]
-                ).properties(
-                    height=400,
-                    title='Feature Means by Group (Top Features)'
-                )
-                
-                st.altair_chart(chart, use_container_width=True)
-            else:
-                st.info("Mean columns not available for this visualization.")
+                col_widget.altair_chart(chart, use_container_width=True)
+
+    with explorer_tab:
+        # Render component with prepared enhanced dataframe
+        render_prediction_explorer(df_enhanced, key_prefix="predict_explorer")
 
 else:
     st.info("Configure settings above and click 'Run Classification' to see results.")

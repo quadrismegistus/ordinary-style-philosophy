@@ -274,9 +274,13 @@ SENTFEAT2DESC = {
     'num_independent_clauses': 'Number of independent clauses',
     'num_dependent_clauses': 'Number of dependent clauses',
     'Cd': 'Maximum clause depth',
-    'DC': 'Number of words in dependent clauses',
-    'IC': 'Number of words in independent clauses',
+    'DC': 'Number of dependent clauses',
+    'DCw': 'Number of words in dependent clauses',
+    'IC': 'Number of independent clauses',
+    'ICw': 'Number of words in independent clauses',
     'Wd': 'Maximum word depth',
+    'C': 'Number of unique clauses',
+    'C*': 'Number of clause transitions',
 }
 
 PHRASEFEAT2DESC = {
@@ -466,7 +470,8 @@ COLS_FEAT_DESCS = {
 CORPUS_MIN_YEAR = 1900
 CORPUS_MAX_YEAR = 2025
 CORPUS_PERIODIZE_BY = 25
-CV_FEAT_TYPES = None
+CV_FEAT_TYPES = ('pos','deprel','ttr','sent')
+NUM_EG_PER_FEAT = 5
 
 COLOR_SENT_BY_COL = 'weight_z'
 COLOR_SENT_BY_FEAT = 'deprel'
@@ -487,7 +492,7 @@ DISPLAY_META_FIELDS = [
     "publisher",
 ]
 
-NUM_DISTINCTIVE_FEATS = 25
+NUM_DISTINCTIVE_FEATS = 100
 EG_TXT_WINDOW = 60
 EG_TXT_WINDOW_LEFT = 25
 EG_TXT_WINDOW_RIGHT = 35

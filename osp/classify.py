@@ -105,14 +105,14 @@ def classify_data(
     results_df = pd.DataFrame(
         {
             "id": _data.index,
-            # "true_label": y_data,
-            # "pred_label": y_pred,
+            "true_label": y_data,
+            "pred_label": y_pred,
             f"prob_{prob_name1}": y_probas[:, 0],
             f"prob_{prob_name2}": y_probas[:, 1],
-            # "test_label": test_label,
-            # "confidence": confidence_scores,
-            # "correct": (y_pred == y_data),
-            # "accuracy": accuracy,
+            "test_label": test_label,
+            "confidence": confidence_scores,
+            "correct": (y_pred == y_data),
+            "accuracy": accuracy,
             "support": _data.shape[0],
         }
     )
@@ -186,7 +186,7 @@ def classify_then_predict_group(
             # df_new_probs["pred_label"] = df_new_probs.idxmax(axis=1)[:5] # max prob class
             # df_new_probs["true_label"] = new_target
             # df_new_probs["correct"] = (
-            #     df_new_probs["pred_label"] == df_new_probs["true_label"]
+                # df_new_probs["pred_label"] == df_new_probs["true_label"]
             # ).apply(int)
             # df_new_probs["test_label"] = " / ".join(cv_model.classes_)
             df_new_probs['support'] = len(df_scores_target)

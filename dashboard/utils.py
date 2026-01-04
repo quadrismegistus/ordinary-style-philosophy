@@ -243,6 +243,27 @@ def load_weights():
     return get_current_feat_weights()
 
 
+@st.cache_data
+def load_slice_ids(query):
+    return get_slice_ids(query)
+
+
+@st.cache_data
+def load_slice_feat_examples(slice_ids, feats, num_egs=25, max_slices=10_000):
+    slice_ids_l = list(slice_ids) if slice_ids is not None else None
+    feats_l = list(feats) if feats is not None else None
+    slice_ids_l.sort()
+    feats_l.sort()
+    with log_progress('loading slice feat examples'):
+        odf = get_slice_feat_egs(
+            slice_ids=slice_ids_l,
+            feats=feats_l,
+            num_egs=num_egs,
+            max_slices=max_slices,
+        )
+    return odf
+
+
 # @st.cache_data
 # def load_new_preds_feats(_text_input, cache_key=None):
 #     """

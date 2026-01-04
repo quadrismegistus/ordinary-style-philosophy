@@ -30,6 +30,7 @@ cache = lru_cache(maxsize=None)
 p9.options.figure_size = (10, 8)
 p9.options.dpi = 300
 pd.options.display.max_colwidth = 200
+pd.options.styler.render.max_elements = 400_000
 
 # Import all modules
 from .constants import *
