@@ -1,0 +1,94 @@
+import streamlit as st
+
+st.set_page_config(page_title="Slice Visualization", layout="wide")
+
+# 1. Retrieve last choice
+from osp import STASH_DASHBOARD_STATE
+last_slice_id = STASH_DASHBOARD_STATE.get("osp_last_slice_id")
+
+import sys, os
+
+# Setup paths to import 'osp' and 'utils'
+PATH_PAGES = os.path.dirname(os.path.abspath(__file__))
+PATH_DASHBOARD = os.path.dirname(PATH_PAGES)
+PATH_REPO = os.path.dirname(PATH_DASHBOARD)
+if PATH_REPO not in sys.path:
+    sys.path.append(PATH_REPO)
+if PATH_DASHBOARD not in sys.path:
+    sys.path.append(PATH_DASHBOARD)
+
+import stanza
+from osp import *
+from utils import *
+
+topcol1,topcol2a,topcol2b = st.columns([5,2.5,2.5])
+
+with topcol1:
+    st.title("Slice Visualization")
+
+# Sidebar for visualization settings
+word_feat_type, color_column, view_mode = setup_sidebar()
+
+# Get parameters from URL
+query_params = st.query_params
+slice_id = query_params.get("slice_id")
+if not slice_id and last_slice_id:
+    slice_id = last_slice_id
+txt_input = query_params.get("txt")
+
+left_col, right_col = st.columns([1, 1])
+
+if not txt_input and not slice_id:
+    text_input = st.text_area("Paste text here to analyze:", height=300, placeholder="Type or paste text here...", value=newtext)
+    # open URL on Ctrl+Enter or button click
+    if st.button("Analyze"):
+        st.query_params['txt'] = text_input
+        st.rerun()
+else:
+    # if slice_id:
+    #     st.markdown(f"### Visualizing Slice: `{slice_id}`")
+    # else:
+    #     st.markdown(f"### Visualizing Text")
+
+    with st.spinner(f"Loading text..."):
+        try:
+            if slice_id:
+                if slice_id in STASH_SLICES_NLP:
+                    docstr = STASH_SLICES_NLP[slice_id]
+                    doc = stanza.Document.from_serialized(docstr)
+                else:
+                    st.error(f"Slice ID `{slice_id}` not found in stash.")
+                    st.stop()
+            elif txt_input:
+                doc = get_nlp_doc(txt_input)
+        except Exception as e:
+            st.error(f"Error loading slice: {e}")
+            st.stop()
+    
+
+
+    # with left_col:
+    #     display_slice_predictions(
+    #         doc,
+    #         color_column=color_column,
+    #         word_feat_type=word_feat_type,
+    #         view_mode=view_mode,
+    #         cache_key=slice_id,
+    #     )
+    
+    # with right_col:
+    #     plot_weight_distribution(doc, color_column=color_column)
+
+    # Auto-track last viewed slice_id
+    if slice_id and st.session_state.get("last_viewed_slice_id") != slice_id:
+        st.session_state["last_viewed_slice_id"] = slice_id
+        STASH_DASHBOARD_STATE["osp_last_slice_id"] = slice_id
+
+    display_slice_analysis(
+        doc,
+        color_column,
+        word_feat_type,
+        view_mode=view_mode,
+        cache_key=slice_id,
+    )
+

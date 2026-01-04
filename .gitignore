@@ -210,3 +210,4 @@ __marimo__/
 venv
 data/raw
 .DS_Store
+preds3.csv
