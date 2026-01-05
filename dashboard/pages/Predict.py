@@ -580,10 +580,10 @@ else:
                 "Run Classification ↗",
                 run_url,
                 type="primary",
-                use_container_width=True,
+                width='stretch',
             )
         else:
-            st.button("Run Classification", type="primary", use_container_width=True, disabled=True)
+            st.button("Run Classification", type="primary", width='stretch', disabled=True)
 
     st.stop()  # Stop here in config mode - don't show results section
 
@@ -806,7 +806,7 @@ if 'predict_df_preds' in st.session_state and 'predict_df_feats' in st.session_s
         
         try:
             styled_agg = style_results_df(df_agg_display, prob_cols=pct_cols, as_percentage=True)
-            st.dataframe(styled_agg, use_container_width=True, hide_index=True)
+            st.dataframe(styled_agg, width='stretch', hide_index=True)
         except Exception as e:
             st.error(f"Error displaying aggregated results table: {e}")
             st.dataframe(df_agg_display)
@@ -836,7 +836,7 @@ if 'predict_df_preds' in st.session_state and 'predict_df_feats' in st.session_s
                 
                 st.dataframe(
                     styled_detailed,
-                    use_container_width=True,
+                    width='stretch',
                     height=400,
                     column_config=column_config,
                     column_order=['View', 'id'] + [c for c in df_detailed.columns if c not in ['View', 'id']]
@@ -865,7 +865,7 @@ if 'predict_df_preds' in st.session_state and 'predict_df_feats' in st.session_s
         
         st.dataframe(
             style_feats_df(df_feats_sorted.head(n_display)),
-            use_container_width=True,
+            width='stretch',
             height=500
         )
         
@@ -914,41 +914,43 @@ if 'predict_df_preds' in st.session_state and 'predict_df_feats' in st.session_s
         render_feature_summary(df_smpl_feats, url_group1, url_group2, egs_g1, egs_g2)
 
     with viz_tab:
-        st.markdown("#### Probability Distributions")
-        if not prob_cols:
-            st.warning("No probability columns found.")
-        else:
-            col_g1, col_g2 = st.columns(2)
-            distribution_configs = [
-                (col_g1, group1_name, f"prob_{group1_name}"),
-                (col_g2, group2_name, f"prob_{group2_name}"),
-            ]
+        st.markdown('#### Not working right now...')
+        # st.markdown("#### Probability Distributions")
+        # if not prob_cols:
+        #     st.warning("No probability columns found.")
+        # else:
+        #     col_g1, col_g2 = st.columns(2)
+        #     distribution_configs = [
+        #         (col_g1, group1_name, f"prob_{group1_name}"),
+        #         (col_g2, group2_name, f"prob_{group2_name}"),
+        #     ]
 
-            for col_widget, group_name, prob_col in distribution_configs:
-                col_widget.markdown(f"##### {group_name} slices")
-                if prob_col not in df_enhanced.columns:
-                    col_widget.warning(f"{prob_col} missing from predictions.")
-                    continue
-                subset = df_enhanced[df_enhanced["target"] == group_name]
-                if subset.empty:
-                    col_widget.info("No slices mapped to this group.")
-                    continue
-                chart = (
-                    alt.Chart(subset)
-                    .mark_bar(opacity=0.75)
-                    .encode(
-                        x=alt.X(f"{prob_col}:Q", bin=alt.Bin(maxbins=35), title="Probability"),
-                        y=alt.Y("count():Q", title="Slices"),
-                        tooltip=[alt.Tooltip(f"{prob_col}:Q", format=".2f"), "count()"],
-                    )
-                    .properties(height=320, title=f"{group_name} probability")
-                    .interactive()
-                )
-                col_widget.altair_chart(chart, use_container_width=True)
+        #     for col_widget, group_name, prob_col in distribution_configs:
+        #         col_widget.markdown(f"##### {group_name} slices")
+        #         if prob_col not in df_enhanced.columns:
+        #             col_widget.warning(f"{prob_col} missing from predictions.")
+        #             continue
+        #         subset = df_enhanced[df_enhanced["target"] == group_name]
+        #         if subset.empty:
+        #             col_widget.info("No slices mapped to this group.")
+        #             continue
+        #         chart = (
+        #             alt.Chart(subset)
+        #             .mark_bar(opacity=0.75)
+        #             .encode(
+        #                 x=alt.X(f"{prob_col}:Q", bin=alt.Bin(maxbins=35), title="Probability"),
+        #                 y=alt.Y("count():Q", title="Slices"),
+        #                 tooltip=[alt.Tooltip(f"{prob_col}:Q", format=".2f"), "count()"],
+        #             )
+        #             .properties(height=320, title=f"{group_name} probability")
+        #             .interactive()
+        #         )
+        #         col_widget.altair_chart(chart, width='stretch')
 
     with explorer_tab:
+        st.markdown('#### Not working right now...')
         # Render component with prepared enhanced dataframe
-        render_prediction_explorer(df_enhanced, key_prefix="predict_explorer")
+        # render_prediction_explorer(df_enhanced, key_prefix="predict_explorer")
 
 else:
     st.info("Configure settings above and click 'Run Classification' to see results.")

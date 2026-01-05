@@ -165,7 +165,7 @@ def render_prediction_explorer(df_slices, key_prefix="pred_explorer"):
     
     selection = st.dataframe(
         styled_df_filtered,
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
@@ -203,7 +203,7 @@ def render_prediction_explorer(df_slices, key_prefix="pred_explorer"):
             
             st.dataframe(
                 styled_slices,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 column_config={
                     "View": st.column_config.LinkColumn("View", display_text="Open ↗")

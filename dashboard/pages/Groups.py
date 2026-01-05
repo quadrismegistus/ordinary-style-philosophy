@@ -231,7 +231,7 @@ with create_tab:
     st.markdown("#### Matching metadata")
     st.dataframe(
         df_filtered[DISPLAY_META_FIELDS],
-        use_container_width=True,
+        width='stretch',
         height=480,
     )
     if st.button("Save group", type="primary"):
@@ -271,7 +271,7 @@ with saved_tab:
         st.markdown("#### Saved groups")
         st.dataframe(
             df_saved,
-            use_container_width=True,
+            width='stretch',
             height=320,
         )
 

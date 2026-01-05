@@ -69,7 +69,7 @@ if text_input:
             color='Class:N',
             tooltip=['comparison', 'Class', alt.Tooltip('Probability', format='.2%')]
         ).properties(height=chart_height)
-        st.altair_chart(pred_chart, use_container_width=True)
+        st.altair_chart(pred_chart, width='stretch')
 
     # Navigation tabs below the input/summary row
     st.divider()
@@ -133,7 +133,7 @@ if text_input:
                 y=alt.Y('Prob. Philosophy:Q', scale=alt.Scale(domain=[0, 1])),
                 tooltip=['Slice', alt.Tooltip('Prob. Philosophy:Q', format='.2%')]
             ).properties(height=300).interactive()
-            st.altair_chart(timeline_chart, use_container_width=True)
+            st.altair_chart(timeline_chart, width='stretch')
         
         st.divider()
         
@@ -161,7 +161,7 @@ if text_input:
         
         st.dataframe(
             df_slices[['Slice Index', 'Text Preview', 'Visual Analysis']],
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             column_config={
                 "Visual Analysis": st.column_config.LinkColumn(

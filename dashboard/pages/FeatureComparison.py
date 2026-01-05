@@ -90,7 +90,7 @@ with topcol2:
                 key="feature_comp_group_b",
             )
     with button_col:
-        run_calc = st.button("Calculate", type="primary", use_container_width=True)
+        run_calc = st.button("Calculate", type="primary", width='stretch')
 
 if selected_group_a:
     set_current_group_a(selected_group_a)

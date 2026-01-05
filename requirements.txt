@@ -9,3 +9,9 @@ svgling
 plotnine
 scikit-learn
 st-annotated-text
+streamlit
+IPython
+altair
+logmap
+bs4
+spacy

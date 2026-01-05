@@ -433,7 +433,7 @@ def plot_predictive_features(df_new_feats):
             height=600, title=f"Predictive Features: {target}"
         )
 
-        st.altair_chart(layered, use_container_width=True)
+        st.altair_chart(layered, width='stretch')
 
 
 def display_slice_predictions(
@@ -460,7 +460,7 @@ def display_slice_predictions(
         )
         .properties(height=200)
     )
-    st.altair_chart(pred_chart, use_container_width=True)
+    st.altair_chart(pred_chart, width='stretch')
 
 
 def display_slice_analysis(
@@ -691,7 +691,7 @@ def plot_weight_distribution(doc, color_column="weight_z", title=None):
         .interactive()
     )
 
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width='stretch')
 
 
 def setup_sidebar():

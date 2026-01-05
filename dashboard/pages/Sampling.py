@@ -296,7 +296,7 @@ with right:
     if comparison_name != last_comp_name:
         set_current_comparison(comparison_name)
 
-    # if st.button("Seed default comparisons (from constants)", use_container_width=True):
+    # if st.button("Seed default comparisons (from constants)", width='stretch'):
     #     try:
     #         seeded = _seed_comparisons_from_constants(df_meta)
     #         st.success(f"Seeded {len(seeded)} comparisons.")
@@ -320,9 +320,9 @@ with right:
     # )
     col1, col2 = st.columns(2)
     with col1:
-        submit = st.button("Compare", type="secondary", use_container_width=True)
+        submit = st.button("Compare", type="secondary", width='stretch')
     with col2:
-        save = st.button("Save comparison", use_container_width=True)
+        save = st.button("Save comparison", width='stretch')
 
 if save:
     # Save both group names and their queries to localStorage
@@ -604,7 +604,7 @@ if run_data:
         fig.update_xaxes(title_text="Period")
         st.plotly_chart(
             fig,
-            use_container_width=True,
+            width='stretch',
             config={"displayModeBar": False},
             key=key,
         )
