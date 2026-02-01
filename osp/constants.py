@@ -53,7 +53,7 @@ PATH_PAGES = os.path.join(PATH_DASHBOARD, "pages")
 PATH_DATA_RAW = os.path.join(PATH_DATA, "raw")
 PATH_DATA_STASH = os.path.join(PATH_DATA_RAW, "stash")
 PATH_METADATA = os.path.join(PATH_DATA, "metadata.csv")
-PATH_TXT = os.path.join(PATH_DATA, "txt")
+PATH_TXT = os.path.join(PATH_DATA_RAW, "txt")
 FN_PMLA = os.path.join(PATH_DATA, "raw/LitStudiesJSTOR.jsonl")
 FN_JSTOR = os.path.join(PATH_DATA, "raw/jstor_metadata_2025-11-28.jsonl.gz")
 FN_JSTOR_DATA = os.path.join(PATH_DATA, "raw/jstor_data.jsonl.gz")
@@ -98,7 +98,6 @@ STASH_DASHBOARD_COMPARISONS = get_stash('osp_dashboard_comparisons')
 STASH_DASHBOARD_STATE = get_stash('osp_dashboard_state')
 STASH_CUSTOM_PREDS = get_stash('osp_custom_preds')
 
-from logmap import logmap
 
 # Wordsets
 WORDSETS = ["top", "content", "non_content"]

@@ -73,21 +73,26 @@ def get_words_freqs_slices(words, slice_len=None):
     return pd.DataFrame(word2text2count).rename_axis('id__slice').fillna(0).applymap(int).astype(int)
 
 
-def iter_txt_slices(txt, slice_len, ok_words):
-    """Helper function to iterate over text slices."""
+def iter_txt_slices(txt, slice_len=10, ok_words=None):
+    from .data_loaders import get_ok_words
     from .text_processing import tokenize_agnostic
-    
-    words = []
-    for token in tokenize_agnostic(txt):
-        if token.strip().isalpha() and token.lower() in ok_words:
-            words.append(token)
-    
-    slice_num = 0
-    while len(words) >= slice_len:
-        slice_words = words[:slice_len]
-        yield slice_num, ' '.join(slice_words)
-        words = words[slice_len:]
-        slice_num += 1
+    if ok_words is None:
+        ok_words = get_ok_words()
+    num_recog = 0
+    slicex = []
+    num_slices = 0
+    for si,sent in enumerate(txt.strip().split('\n')):
+        for word in tokenize_agnostic(sent):
+            if word.strip().isalpha() and word.lower() in ok_words:
+                num_recog += 1
+            slicex.append(word)
+        if num_recog >= slice_len:
+            num_slices += 1
+            otxt = ''.join(slicex).strip()
+            yield num_slices,otxt
+            slicex = []
+            num_recog = 0
+        slicex.append('\n')
 
 
 def get_text_slice_ids(id, n_slices=10):
