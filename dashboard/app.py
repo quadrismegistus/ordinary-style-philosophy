@@ -44,7 +44,7 @@ pages = {
     "Passages": [
         sentence_page,
         passages_page,
-        # custom_page,
+        custom_page,
     ],
     "Project": [
         about_page,

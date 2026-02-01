@@ -264,57 +264,55 @@ def load_slice_feat_examples(slice_ids, feats, num_egs=25, max_slices=10_000):
     return odf
 
 
-# @st.cache_data
-# def load_new_preds_feats(_text_input, cache_key=None):
-#     """
-#     _text_input can be a string (custom text) or a stanza Document.
-#     cache_key is used for Streamlit hashing since Document is unhashable.
-#     """
-#     doc = process_text(_text_input) if isinstance(_text_input, str) else _text_input
+@st.cache_data
+def load_new_preds_feats(_text_input, cache_key=None):
+    """
+    _text_input can be a string (custom text) or a stanza Document.
+    cache_key is used for Streamlit hashing since Document is unhashable.
+    """
+    doc = process_text(_text_input) if isinstance(_text_input, str) else _text_input
 
-#     # Check if cache_key looks like a slice_id (text_id__slice_num)
-#     slice_id = cache_key if isinstance(cache_key, str) and "__" in cache_key else None
-#     df_new_preds, df_new_feats = get_new_preds_feats(doc, slice_id=slice_id)
+    # Check if cache_key looks like a slice_id (text_id__slice_num)
+    slice_id = cache_key if isinstance(cache_key, str) and "__" in cache_key else None
+    df_new_preds, df_new_feats = get_new_preds_feats(doc, slice_id=slice_id)
 
-#     # Keep track of non-numeric columns we need
-#     needed_cols = ["feature", "feat_type", "feat_name"]
-#     # Ensure columns exist before groupby
-#     for col in needed_cols:
-#         if col not in df_new_feats.columns:
-#             if col == 'feat_name':
-#                 df_new_feats['feat_name'] = [str(x).split('_', 1)[-1] if '_' in str(x) else str(x) for x in df_new_feats['feature']]
-#             elif col == 'feat_type':
-#                 df_new_feats['feat_type'] = [str(x).split('_')[0] for x in df_new_feats['feature']]
+    # Keep track of non-numeric columns we need
+    needed_cols = ["feature", "feat_type", "feat_name"]
+    # Ensure columns exist before groupby
+    for col in needed_cols:
+        if col not in df_new_feats.columns:
+            if col == 'feat_name':
+                df_new_feats['feat_name'] = [str(x).split('_', 1)[-1] if '_' in str(x) else str(x) for x in df_new_feats['feature']]
+            elif col == 'feat_type':
+                df_new_feats['feat_type'] = [str(x).split('_')[0] for x in df_new_feats['feature']]
 
-#     df_new_feats_grouped = (
-#         df_new_feats.groupby(needed_cols).mean(numeric_only=True).reset_index()
-#     )
+    df_new_feats_grouped = (
+        df_new_feats.groupby(needed_cols).mean(numeric_only=True).reset_index()
+    )
 
-#     # Sort and filter for display
-#     df_new_feats_display = df_new_feats_grouped.sort_values(
-#         "score_mean_diff_3-1", ascending=False
-#     )
-#     df_new_feats_display = df_new_feats_display[
-#         needed_cols + [c for c in featcols if c in df_new_feats_display.columns]
-#     ]
-#     df_new_feats_display["feat_desc"] = df_new_feats_display["feature"].map(
-#         lambda x: FEAT2DESC.get(x, "")
-#     )
+    # Sort and filter for display
+    df_new_feats_display = df_new_feats_grouped.copy()
+    df_new_feats_display = df_new_feats_display[
+        needed_cols + [c for c in featcols if c in df_new_feats_display.columns]
+    ]
+    df_new_feats_display["feat_desc"] = df_new_feats_display["feature"].map(
+        lambda x: FEAT2DESC.get(x, "")
+    )
 
-#     if "comparison" not in df_new_preds.columns:
-#         # Fallback if comparison is missing (e.g. from old stashed data)
-#         # We can try to get it from the models or just use a placeholder
-#         df_new_preds["comparison"] = "Unknown Comparison"
+    if "comparison" not in df_new_preds.columns:
+        # Fallback if comparison is missing (e.g. from old stashed data)
+        # We can try to get it from the models or just use a placeholder
+        df_new_preds["comparison"] = "Unknown Comparison"
 
-#     df_new_preds = (
-#         df_new_preds.groupby("comparison")
-#         .mean(numeric_only=True)
-#         .sort_values("prob_Philosophy", ascending=False)
-#     )
-#     if "run" in df_new_preds.columns:
-#         df_new_preds = df_new_preds.drop(columns=["run"])
+    df_new_preds = (
+        df_new_preds.groupby("comparison")
+        .mean(numeric_only=True)
+        .sort_values("prob_Philosophy", ascending=False)
+    )
+    if "run" in df_new_preds.columns:
+        df_new_preds = df_new_preds.drop(columns=["run"])
 
-#     return df_new_preds, df_new_feats_display, df_new_feats_grouped
+    return df_new_preds, df_new_feats_display, df_new_feats_grouped
 
 
 def plot_predictive_features(df_new_feats):
