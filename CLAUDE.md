@@ -82,3 +82,9 @@ Streamlit app with pages in `dashboard/pages/`. Uses `dashboard/utils.py` for st
 - **Stash location mismatch**: Notebooks using `HashStash('name')` without full path write to `~/.cache/hashstash`, while library code writes to `data/raw/stash/`. If the dashboard shows nothing, check this first.
 - **Slice numbering**: Current code is 0-indexed (`__00`), some older notebooks were 1-indexed (`__01`). Mismatched indexing causes "missing slice" issues across pipeline stages.
 - **Comparisons**: Defined in `constants.py` → `COMPARISONS` as pairs of `(name, pandas_query)` applied to metadata. Training defaults to `COMPARISONS[0]`.
+- **LMDB/Python version**: HashStash uses LMDB under the hood. Stashes built with one Python major version (e.g. 3.11) may not be readable from another (e.g. 3.14). If you see `MDB_CORRUPTED` errors, rebuild stashes from scratch with a consistent Python version.
+- **Data filenames**: Raw data filenames in `constants.py` can be overridden via environment variables (`OSP_FN_JSTOR_DATA`, `OSP_FN_JSTOR_METADATA`, `OSP_FN_PMLA`, `OSP_FN_JSTOR_DATA_OTHER`) if JSTOR delivers files with different names.
+
+## Acknowledgments
+
+The codebase cleanup for publication — including the `osp` CLI, test suite, import refactoring, data export tooling, CI/CD setup, and documentation — was done in collaboration with Claude Code (claude.ai/code).
