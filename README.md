@@ -42,7 +42,7 @@ Validate your setup:
 osp check
 ```
 
-You will also need `data/raw/worddb.byu.txt` (BYU word frequency database) for vocabulary filtering during slicing.
+Vocabulary filtering during slicing uses `data/release/word2pos.json` (included in the repo and in [Zenodo releases](https://doi.org/10.5281/zenodo.19482402)). If you have the original BYU word frequency database (`data/raw/worddb.byu.txt`), it will be used automatically instead.
 
 ## Setup
 

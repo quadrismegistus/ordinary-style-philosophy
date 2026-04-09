@@ -180,11 +180,12 @@ def get_top_words(n=10, remove_stopwords=True, except_first_n=100):
 def get_worddb(path=None):
     if path is None:
         path = PATH_WORDDB
-    
+
     if not os.path.exists(path):
-        return None
+        # Fall back to word2pos.json (redistributable derivative)
+        return _worddb_from_word2pos()
     df = pd.read_csv(path, sep='\t').set_index('word').fillna('')
-    
+
     def is_non_content_pos_worddb(pos, word):
         pos = str(pos)
         if pos and pos[0] in {'n','v','j'}:
@@ -194,7 +195,34 @@ def get_worddb(path=None):
         if pos and pos[0] == "m":
             return False
         return True
-    
+
+    df['is_non_content_pos'] = [is_non_content_pos_worddb(x, y) for x, y in zip(df.pos, df.index)]
+    return df
+
+
+def _worddb_from_word2pos():
+    """Build a worddb-compatible DataFrame from word2pos.json."""
+    import json
+    from .constants import PATH_WORD2POS
+
+    if not os.path.exists(PATH_WORD2POS):
+        return None
+    with open(PATH_WORD2POS) as f:
+        word2pos = json.load(f)
+    df = pd.DataFrame(
+        [{"word": w, "pos": p} for w, p in word2pos.items()]
+    ).set_index("word")
+
+    def is_non_content_pos_worddb(pos, word):
+        pos = str(pos)
+        if pos and pos[0] in {'n','v','j'}:
+            return False
+        if word.endswith('ly'):
+            return False
+        if pos and pos[0] == "m":
+            return False
+        return True
+
     df['is_non_content_pos'] = [is_non_content_pos_worddb(x, y) for x, y in zip(df.pos, df.index)]
     return df
 

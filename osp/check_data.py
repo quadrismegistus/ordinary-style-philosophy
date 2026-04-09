@@ -12,7 +12,7 @@ def check():
     from .constants import (
         PATH_DATA, PATH_DATA_RAW, PATH_METADATA,
         FN_JSTOR, FN_JSTOR_DATA, FN_JSTOR_DATA_OTHER, FN_PMLA,
-        PATH_WORDDB,
+        PATH_WORDDB, PATH_WORD2POS,
     )
 
     ok = True
@@ -42,7 +42,14 @@ def check():
     check_file(FN_JSTOR, "JSTOR bibliographic metadata (jstor_metadata.jsonl.gz)")
     check_file(FN_PMLA, "Literature full-text export (LitStudiesJSTOR.jsonl)")
     check_file(FN_JSTOR_DATA_OTHER, "Non-philosophy full-text export (jstor_data_nonphil.jsonl.gz)", required=False)
-    check_file(PATH_WORDDB, "Word database (worddb.byu.txt)")
+    has_worddb = os.path.exists(PATH_WORDDB)
+    has_word2pos = os.path.exists(PATH_WORD2POS)
+    if has_worddb:
+        check_file(PATH_WORDDB, "Word database (worddb.byu.txt)")
+    elif has_word2pos:
+        check_file(PATH_WORD2POS, "Word-to-POS mapping (word2pos.json)")
+    else:
+        check_file(PATH_WORDDB, "Word database (worddb.byu.txt or word2pos.json)")
 
     print()
     check_file(PATH_METADATA, "Corpus metadata (metadata.csv)", required=False)

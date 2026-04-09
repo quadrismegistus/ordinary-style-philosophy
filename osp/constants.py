@@ -74,6 +74,7 @@ PATH_MDW_DATA = os.path.join(PATH_DATA, "mdw_data.csv")
 PATH_WORDFREQS_TSV = os.path.join(PATH_DATA, "raw", "word_freqs.tsv")
 PATH_WORDFREQS_TSV_NL = 62141323  # line count for progress bar
 PATH_WORDDB = os.path.join(PATH_DATA, "raw", "worddb.byu.txt")
+PATH_WORD2POS = os.path.join(PATH_DATA, "release", "word2pos.json")
 PATH_TOTAL_TEXT_COUNTS = os.path.join(PATH_DATA, "total_text_counts.json")
 PATH_FEAT_WEIGHTS = os.path.join(PATH_DATA, "feats_perspectival2.xlsx")
 

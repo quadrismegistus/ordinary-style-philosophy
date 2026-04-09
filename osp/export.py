@@ -18,6 +18,23 @@ import pandas as pd
 from tqdm import tqdm
 
 
+def export_word2pos(output_dir):
+    """Export word-to-POS mapping from worddb (no frequency data)."""
+    import json
+    from .data_loaders import get_worddb
+
+    df = get_worddb()
+    if df is None:
+        print("  word2pos: SKIPPED (no worddb.byu.txt or word2pos.json found)")
+        return
+    word2pos = df["pos"].to_dict()
+    path = os.path.join(output_dir, "word2pos.json")
+    with open(path, "w") as f:
+        json.dump(word2pos, f)
+    print(f"  word2pos: {len(word2pos)} words -> {path}")
+    return word2pos
+
+
 def export_metadata(output_dir):
     """Export corpus metadata (bibliographic info, no text)."""
     from .data_loaders import get_corpus_metadata
@@ -87,6 +104,7 @@ def main():
     print(f"Exporting to {args.output}/\n")
 
     export_metadata(args.output)
+    export_word2pos(args.output)
     export_slice_features(args.output)
     export_predictions(args.output)
 

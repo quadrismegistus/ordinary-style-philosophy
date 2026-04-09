@@ -209,7 +209,8 @@ __marimo__/
 
 venv
 data/raw
-data/release
+data/release/*
+!data/release/word2pos.json
 .DS_Store
 preds3.csv
 .pytest_cache
