@@ -94,7 +94,7 @@ osp export --output data/release/
 
 Exports publication-safe derived data (no copyrighted text): metadata, feature matrices, predictions, and feature weights.
 
-Pre-computed derived data is also available from [GitHub Releases](../../releases).
+Pre-computed derived data is also available from [GitHub Releases](../../releases) and archived on Zenodo: [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19482402.svg)](https://doi.org/10.5281/zenodo.19482402)
 
 ## Tests
 
