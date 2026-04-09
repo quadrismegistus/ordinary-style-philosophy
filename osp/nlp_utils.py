@@ -1,4 +1,10 @@
-from . import *
+import string
+from collections import Counter
+
+import pandas as pd
+import nltk
+import stanza
+
 
 def get_nlp():
     import osp.constants as constants
@@ -231,6 +237,24 @@ CLAUSE_DEPRELS = {
     'parataxis',  # loosely attached clause
 }
 
+def get_spaces_after(sent):
+    space_after = {}
+    for token in sent.tokens:
+        for wd in token.to_dict():
+            space = 'SpaceAfter=No' in wd.get('misc', '')
+            ids = wd['id']
+            if isinstance(ids, int):
+                if ids not in space_after:
+                    space_after[ids] = not space
+            else:
+                if ids not in space_after:
+                    space_after[ids[-1]] = not space
+                for id in ids[:-1]:
+                    if id not in space_after:
+                        space_after[id] = False
+    return space_after
+
+
 
 def get_clauses_v2(sent, with_depth=True):
     """
@@ -258,6 +282,7 @@ def get_clauses_v2(sent, with_depth=True):
         sent = get_nlp_doc(sent).sentences[0]
     
     words = sent.words
+    spaces_after = get_spaces_after(sent)
     n = len(words)
     
     if n == 0:
@@ -367,6 +392,7 @@ def get_clauses_v2(sent, with_depth=True):
             'word_deprel': word.deprel,
             'word_head': word.head,
             'word_depth': word_depth.get(word_id, 0),
+            'word_space_after': spaces_after.get(word_id, True),
         })
     
     odf = pd.DataFrame(rows)

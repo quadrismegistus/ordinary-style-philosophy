@@ -1,4 +1,7 @@
-from . import *
+import os
+import sys
+
+from hashstash import HashStash
 
 # Totals and limits
 TOTAL_PMLA = 71902
@@ -54,14 +57,22 @@ PATH_DATA_RAW = os.path.join(PATH_DATA, "raw")
 PATH_DATA_STASH = os.path.join(PATH_DATA_RAW, "stash")
 PATH_METADATA = os.path.join(PATH_DATA, "metadata.csv")
 PATH_TXT = os.path.join(PATH_DATA_RAW, "txt")
-FN_PMLA = os.path.join(PATH_DATA, "raw/LitStudiesJSTOR.jsonl")
-FN_JSTOR = os.path.join(PATH_DATA, "raw/jstor_metadata_2025-11-28.jsonl.gz")
-FN_JSTOR_DATA = os.path.join(PATH_DATA, "raw/jstor_data.jsonl.gz")
-FN_JSTOR_DATA_OTHER = os.path.join(PATH_DATA, "raw/jstor_data_nonphil.jsonl.gz")
+# Raw data filenames — override via environment variables if JSTOR delivers
+# files with different names (e.g. a metadata dump with a different date).
+FN_PMLA = os.environ.get("OSP_FN_PMLA", os.path.join(PATH_DATA_RAW, "LitStudiesJSTOR.jsonl"))
+FN_JSTOR = os.environ.get("OSP_FN_JSTOR_METADATA", os.path.join(PATH_DATA_RAW, "jstor_metadata.jsonl.gz"))
+FN_JSTOR_DATA = os.environ.get("OSP_FN_JSTOR_DATA", os.path.join(PATH_DATA_RAW, "jstor_data.jsonl.gz"))
+FN_JSTOR_DATA_OTHER = os.environ.get("OSP_FN_JSTOR_DATA_OTHER", os.path.join(PATH_DATA_RAW, "jstor_data_nonphil.jsonl.gz"))
+
+# Backwards compat: if the new default doesn't exist but the old dated file does, use it
+if not os.path.exists(FN_JSTOR):
+    _legacy = os.path.join(PATH_DATA_RAW, "jstor_metadata_2025-11-28.jsonl.gz")
+    if os.path.exists(_legacy):
+        FN_JSTOR = _legacy
 PATH_NON_CONTENT_WORDS = os.path.join(PATH_DATA, "non_content_words.xlsx")
 PATH_MDW_DATA = os.path.join(PATH_DATA, "mdw_data.csv")
 PATH_WORDFREQS_TSV = os.path.join(PATH_DATA, "raw", "word_freqs.tsv")
-PATH_WORDFREQS_TSV_NL = 62141323
+PATH_WORDFREQS_TSV_NL = 62141323  # line count for progress bar
 PATH_WORDDB = os.path.join(PATH_DATA, "raw", "worddb.byu.txt")
 PATH_TOTAL_TEXT_COUNTS = os.path.join(PATH_DATA, "total_text_counts.json")
 PATH_FEAT_WEIGHTS = os.path.join(PATH_DATA, "feats_perspectival2.xlsx")
@@ -175,10 +186,10 @@ POS2DESC = {
     "UH": "Interjection",
     "VB": "Verb, base form",
     "VBD": "Verb, past tense",
-    "VBG": "Verb, gerund or present participle",
+    "VBG": "Verb, gerund or pres. part.",
     "VBN": "Verb, past participle",
-    "VBP": "Verb, non-3rd person singular present",
-    "VBZ": "Verb, 3rd person singular present",
+    "VBP": "Verb, non-3rd person sing. pres.",
+    "VBZ": "Verb, 3rd person sing. pres.",
     "WDT": "Wh-determiner",
     "WP": "Wh-pronoun",
     "WP$": "Possessive wh-pronoun",
@@ -195,7 +206,8 @@ POS2DESC = {
 
 # Dependency relation descriptions
 DEP2DESC = {
-    "acl": "Clausal modifier of noun (adnominal clause)",
+    # "acl": "Clausal modifier of noun (adnominal clause)",
+    "acl": "Clausal modif. of noun (adnom.)",
     "acl:relcl": "Relative clause modifier",
     "advcl": "Adverbial clause modifier",
     "advcl:relcl": "Adverbial relative clause modifier",
@@ -267,20 +279,20 @@ DEP2DESC = {
 }
 
 SENTFEAT2DESC = {
-    'num_words': 'Number of words in sentence',
-    'num_words_in_independent_clauses': 'Number of words in independent clauses',
-    'num_words_in_dependent_clauses': 'Number of words in dependent clauses',
+    'num_words': '# Words in sentence',
+    'num_words_in_independent_clauses': '# Words in independent clauses',
+    'num_words_in_dependent_clauses': '# Words in dependent clauses',
     'height': 'Height of sentence syntax trees',
-    'num_independent_clauses': 'Number of independent clauses',
-    'num_dependent_clauses': 'Number of dependent clauses',
+    'num_independent_clauses': '# Independent clauses',
+    'num_dependent_clauses': '# Dependent clauses',
     'Cd': 'Maximum clause depth',
-    'DC': 'Number of dependent clauses',
-    'DCw': 'Number of words in dependent clauses',
-    'IC': 'Number of independent clauses',
-    'ICw': 'Number of words in independent clauses',
+    'DC': '# Dependent clauses',
+    'DCw': '# Words in dependent clauses',
+    'IC': '# Independent clauses',
+    'ICw': '# Words in independent clauses',
     'Wd': 'Maximum word depth',
-    'C': 'Number of unique clauses',
-    'C*': 'Number of clause transitions',
+    'C': '# Unique clauses',
+    'C*': '# Clause transitions',
 }
 
 PHRASEFEAT2DESC = {
@@ -371,8 +383,6 @@ GROUPS_TRAIN = COMPARISONS[0]
 
 DF_PREDS_METADATA_COLS = ["discipline", "title","author","journal","year","period"]
 DF_PREDS_AVERAGE_BY = ['text_id'] + DF_PREDS_METADATA_COLS
-
-newtxt = """By a "denoting phrase" I mean a phrase such as any one of the following: a man, some man, any man, every man, all men, the present King of England, the presenting King of France, the center of mass of the solar system at the first instant of the twentieth century, the revolution of the earth round the sun, the revolution of the sun round the earth. Thus a phrase is denoting solely in virtue of its form. We may distinguish three cases: (1) A phrase may be denoting, and yet not denote anything; e.g., 'the present King of France'. (2) A phrase may denote one definite object; e.g., 'the present King of England' denotes a certain man. (3) A phrase may denote ambiguously; e.g. 'a man' denotes not many men, but an ambiguous man. The interpretation of such phrases is a matter of considerably difficulty; indeed, it is very hard to frame any theory not susceptible of formal refutation. All the difficulties with which I am acquainted are met, so far as I can discover, by the theory which I am about to explain."""
 
 
 
@@ -470,7 +480,8 @@ COLS_FEAT_DESCS = {
 CORPUS_MIN_YEAR = 1900
 CORPUS_MAX_YEAR = 2025
 CORPUS_PERIODIZE_BY = 25
-CV_FEAT_TYPES = ('pos','deprel','ttr','sent')
+# CV_FEAT_TYPES = ('pos','deprel','ttr','sent')
+CV_FEAT_TYPES = ('pos','deprel','sent')
 NUM_EG_PER_FEAT = 5
 
 COLOR_SENT_BY_COL = 'weight_z'

@@ -1,4 +1,8 @@
-from . import *
+import re
+import string
+from collections import Counter
+from html.parser import HTMLParser
+
 
 def dehyphenate(text):
     """
@@ -75,3 +79,96 @@ def count_recog_words(txt, n=None):
         n = SLICE_LEN
     return Counter(get_recog_words(txt.lower())[:n])
 
+
+
+def html_to_latex(html: str) -> str:
+    def escape_latex(text: str) -> str:
+        replacements = {
+            "\\": r"\textbackslash{}",
+            "&": r"\&",
+            "%": r"\%",
+            "$": r"\$",
+            "#": r"\#",
+            "_": r"\_",
+            "{": r"\{",
+            "}": r"\}",
+            "~": r"\textasciitilde{}",
+            "^": r"\textasciicircum{}",
+        }
+        return "".join(replacements.get(ch, ch) for ch in text)
+
+    class _Parser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.out = []
+            self.list_stack = []
+            self.style_stack = []
+
+        def _append(self, s: str):
+            if s:
+                self.out.append(s)
+
+        def handle_starttag(self, tag, attrs):
+            tag = tag.lower()
+
+            if tag == "ul":
+                self._append("\n\\begin{itemize}\n")
+                self.list_stack.append("itemize")
+            elif tag == "ol":
+                self._append("\n\\begin{enumerate}\n")
+                self.list_stack.append("enumerate")
+            elif tag == "li":
+                self._append("\\item ")
+            elif tag in ("b", "strong"):
+                self._append("\\textbf{")
+                self.style_stack.append("}")
+            elif tag in ("i", "em"):
+                self._append("\\textit{")
+                self.style_stack.append("}")
+            elif tag == "u":
+                self._append("\\underline{")
+                self.style_stack.append("}")
+            elif tag == "br":
+                self._append(" \\\\\n")
+
+        def handle_endtag(self, tag):
+            tag = tag.lower()
+
+            if tag in ("ul", "ol"):
+                if self.list_stack:
+                    env = self.list_stack.pop()
+                    self._append(f"\n\\end{{{env}}}\n")
+            elif tag == "li":
+                self._append("\n")
+            elif tag in ("b", "strong", "i", "em", "u"):
+                if self.style_stack:
+                    self._append(self.style_stack.pop())
+
+        def handle_data(self, data):
+            if not data:
+                return
+            txt = re.sub(r"\s+", " ", data)
+            self._append(escape_latex(txt))
+
+    p = _Parser()
+    p.feed(html)
+    p.close()
+
+    latex = "".join(p.out)
+    latex = re.sub(r"[ \t]+\n", "\n", latex)
+    latex = re.sub(r"\n{3,}", "\n\n", latex)
+
+    out = latex.strip()
+    out = out.replace('\n', ' ')
+    while '  ' in out:
+        out = out.replace('  ', ' ')
+    return out
+
+
+
+def shorten_eg(eg, max_len=40):
+    eg_pre,w,eg_post = eg.split('*',2)
+    radius = (max_len - len(w)) // 2
+    eg_pre = eg_pre[-radius:].lstrip()
+    eg_post = eg_post[:max_len-len(eg_pre)-len(w)].rstrip()
+    return f'...{eg_pre}XXXEMPHXXX{{{w.lower()}}}{eg_post}...'

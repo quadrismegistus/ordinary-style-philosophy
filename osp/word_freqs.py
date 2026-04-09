@@ -1,7 +1,16 @@
-from . import *
+from collections import Counter, defaultdict
+
+import pandas as pd
+from tqdm import tqdm
+from hashstash import stashed_result
+
+from .constants import (
+    PATH_WORDFREQS_TSV, PATH_WORDFREQS_TSV_NL,
+    STASH_COUNTS, STASH_WORD_FREQS,
+)
+
 
 def gen_word_freqs_raw(lim=None):
-    from .constants import PATH_WORDFREQS_TSV, STASH_COUNTS
     
     ndone = 0
     with open(PATH_WORDFREQS_TSV, 'a+') as f:
@@ -12,8 +21,6 @@ def gen_word_freqs_raw(lim=None):
 
 
 def iter_word_freqs_raw():
-    from .constants import PATH_WORDFREQS_TSV, PATH_WORDFREQS_TSV_NL
-    
     with open(PATH_WORDFREQS_TSV, 'r') as f:
         for line in tqdm(f, total=PATH_WORDFREQS_TSV_NL, desc='get_word_freqs', position=0):
             ln = line.strip()
@@ -24,8 +31,7 @@ def iter_word_freqs_raw():
 
 
 def load_word_freqs(words):
-    from .constants import STASH_WORD_FREQS
-    
+
     dd = {}
     for w in words:
         if w in STASH_WORD_FREQS:
@@ -34,8 +40,7 @@ def load_word_freqs(words):
 
 
 def get_word_freqs(words, force=False):
-    from .constants import STASH_WORD_FREQS
-    
+
     words_done_df = load_word_freqs(words)
     words_done = words_done_df.columns
     words_not_done = [w for w in tqdm(words, desc='finding word freqs', position=0) if w not in words_done]

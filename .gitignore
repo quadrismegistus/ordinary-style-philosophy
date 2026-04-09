@@ -209,5 +209,7 @@ __marimo__/
 
 venv
 data/raw
+data/release
 .DS_Store
 preds3.csv
+.pytest_cache

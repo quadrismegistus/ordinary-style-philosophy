@@ -1,4 +1,18 @@
-from . import *
+import multiprocessing as mp
+from functools import lru_cache
+
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+
+from .constants import (
+    COMPARISONS, DF_PREDS_METADATA_COLS, DF_PREDS_AVERAGE_BY,
+    NORMALIZE_CLASSIFY_DATA,
+    STASH_PREDS_FEATS, STASH_DF_PREDS_FOR_SLICES, STASH_CUSTOM_PREDS,
+)
+from .data_loaders import get_corpus_metadata, get_text_metadata
+
+cache = lru_cache(maxsize=None)
 
 
 def classify_data(
@@ -153,6 +167,7 @@ def classify_then_predict_group(
     return_models=False,
     normalize=NORMALIZE_CLASSIFY_DATA,
     also_predict_unseen=True,
+    progress=True,
     **kwargs,
 ):
     from .features import get_balanced_cv_data, get_mdw_feats
@@ -160,7 +175,7 @@ def classify_then_predict_group(
     l_preds = []
     l_feats = []
     l_models = []
-    for nrun in tqdm(list(range(num_runs))):
+    for nrun in tqdm(list(range(num_runs)), desc="Classifying group", disable=not progress):
         df_scores = get_balanced_cv_data(
             groups_train, target_col=target_col, balance=balance, normalize=normalize, **kwargs
         )
@@ -183,16 +198,10 @@ def classify_then_predict_group(
             new_probs = cv_model.predict_proba(df_scores_unseen.drop(columns=["_target"]))
             df_new_probs = pd.DataFrame(new_probs)
             df_new_probs.columns = [f'prob_{x}' for x in cv_model.classes_]
-            # df_new_probs["pred_label"] = df_new_probs.idxmax(axis=1)[:5] # max prob class
-            # df_new_probs["true_label"] = new_target
-            # df_new_probs["correct"] = (
-                # df_new_probs["pred_label"] == df_new_probs["true_label"]
-            # ).apply(int)
-            # df_new_probs["test_label"] = " / ".join(cv_model.classes_)
             df_new_probs['support'] = len(df_scores_target)
             df_new_probs["id"] = df_scores_unseen.index
             df_new_probs.set_index("id", inplace=True)
-            # df_new_probs
+
 
             df_out_probs = pd.concat(
                 [
@@ -210,20 +219,11 @@ def classify_then_predict_group(
 
     df_feats_cols = [
         x
-        for x in [
-            "feature",
-            "feat_desc",
-            "comparison",
-            # 'group1',
-            # 'group2',
-        ]
+        for x in ["feature", "feat_desc", "comparison"]
         if x in df_feats.columns
     ]
 
     df_feats = df_feats.groupby(df_feats_cols).mean(numeric_only=True).reset_index()
-    # df_mdw = get_mdw_feats(groups_train, **kwargs)
-    # df_feats = df_feats.merge(df_mdw, on="feature", how="left")
-    # df_feats['group1'],df_feats['group2'] = zip(*df_feats['comparison'].str.split(' vs '))
     return (df_preds, df_feats) if not return_models else (df_preds, df_feats, l_models)
 
 
@@ -283,47 +283,78 @@ def load_custom_comparison_results(result_dict):
     return df_preds, df_feats
 
 
+def _do_classify_then_predict_comparison(args):
+    groups_train, normalize, kwargs, return_models = args
+    comparison_name = f"{groups_train[0][0]} vs {groups_train[1][0]}"
+    if return_models:
+        df_preds, df_feats, models = classify_then_predict_group(
+            groups_train,
+            return_models=True,
+            normalize=normalize,
+            progress=False,
+            **kwargs,
+        )
+    else:
+        df_preds, df_feats = classify_then_predict_group(
+            groups_train,
+            return_models=False,
+            normalize=normalize,
+            progress=False,
+            **kwargs,
+        )
+        models = None
+    return comparison_name, df_preds, df_feats, models
+
+
 def classify_then_predict_comparisons(
     comparisons,
     return_models=False,
     normalize=NORMALIZE_CLASSIFY_DATA,
+    num_proc=1,
     **kwargs,
 ):
     l_preds = []
     l_feats = []
     d_models = {}
-    for groups_train in comparisons:
-        comparison_name = f"{groups_train[0][0]} vs {groups_train[1][0]}"
-        print("##", comparison_name)
-        df_preds, df_feats, models = classify_then_predict_group(groups_train, return_models=True, normalize=normalize, **kwargs)
-        l_preds.append(df_preds.assign(comparison=comparison_name))
-        l_feats.append(df_feats.assign(comparison=comparison_name))
-        d_models[comparison_name] = models
+    if num_proc < 2:
+        for groups_train in tqdm(comparisons, desc="Classifying comparisons"):
+            comparison_name = f"{groups_train[0][0]} vs {groups_train[1][0]}"
+            # print("##", comparison_name)
+            if return_models:
+                df_preds, df_feats, models = classify_then_predict_group(
+                    groups_train,
+                    return_models=True,
+                    normalize=normalize,
+                    progress=False,
+                    **kwargs,
+                )
+                d_models[comparison_name] = models
+            else:
+                df_preds, df_feats = classify_then_predict_group(
+                    groups_train,
+                    return_models=False,
+                    normalize=normalize,
+                    progress=False,
+                    **kwargs,
+                )
+            l_preds.append(df_preds.assign(comparison=comparison_name))
+            l_feats.append(df_feats.assign(comparison=comparison_name))
+    else:
+        def iter_args():
+            for groups_train in comparisons:
+                yield (groups_train, normalize, kwargs, return_models)
+
+        with mp.Pool(num_proc) as p:
+            iterr = p.imap(_do_classify_then_predict_comparison, iter_args(), chunksize=1)
+            iterr = tqdm(iterr, total=len(comparisons), desc="Classifying comparisons")
+            for comparison_name, df_preds, df_feats, models in iterr:
+                l_preds.append(df_preds.assign(comparison=comparison_name))
+                l_feats.append(df_feats.assign(comparison=comparison_name))
+                if return_models:
+                    d_models[comparison_name] = models
     odf_preds, odf_feats = pd.concat(l_preds), pd.concat(l_feats)
-    # odf_feats["group1"] = [x.split(" vs ")[0] for x in odf_feats["comparison"]]
-    # odf_feats["group2"] = [x.split(" vs ")[1] for x in odf_feats["comparison"]]
-
-    # print(odf_feats.columns)
-    # odf_feats["score_mean_diff"] = odf_feats["score_mean1"] - odf_feats["score_mean2"]
-    # odf_feats["score_mean_diff_abs"] = np.abs(odf_feats["score_mean_diff"])
-    # odf_feats["score_mean_diff_pct"] = (
-    #     odf_feats["score_mean_diff"] / odf_feats["score_mean2"]
-    # )
-    # odf_feats["score_mean_div"] = odf_feats["score_mean1"] / odf_feats["score_mean2"]
-    # odf_feats["score_mean_div_abs"] = np.abs(odf_feats["score_mean_div"])
-    # odf_feats["score_z_diff"] = odf_feats["score_z1"] - odf_feats["score_z2"]
-    # odf_feats["score_z_diff_abs"] = np.abs(odf_feats["score_z_diff"])
-    # odf_feats["score_z_diff_pct"] = odf_feats["score_z_diff"] / odf_feats["score_z2"]
-    # odf_feats["score_z_div"] = odf_feats["score_z1"] / odf_feats["score_z2"]
-    # odf_feats["score_z_div_abs"] = np.abs(odf_feats["score_z_div"])
-
-    # odf_feats["feat_name"] = [x.split("_", 1)[-1] for x in odf_feats.feature]
-    # odf_feats["feat_type"] = [x.split("_")[0] for x in odf_feats.feature]
-    # odf_feats.sort_values("weight", ascending=False, inplace=True)
     return (odf_preds, odf_feats) if not return_models else (odf_preds, odf_feats, d_models)
 
-
-# @cache
 @STASH_PREDS_FEATS.stashed_result
 def get_preds_feats(
     comparisons=COMPARISONS,
@@ -347,16 +378,6 @@ def get_preds_feats(
         normalize=normalize,
         **kwargs,
     )
-
-
-
-
-
-
-
-
-
-
 
 
 

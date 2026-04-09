@@ -1,8 +1,27 @@
-from . import *
+import os
 import html
+import random
+from collections import Counter
+from functools import lru_cache
+
+import pandas as pd
+import numpy as np
 import nltk
+import stanza
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from tqdm import tqdm
+from IPython.display import HTML, display
+
+from .constants import (
+    PATH_DATA, STASH_SLICES_NLP, STASH_SLICE_FEATS,
+    FEAT2DESC, BAD_SLICE_FEATS, MAX_FEATSET_FEATS,
+)
+from .nlp_utils import (
+    get_nlp_doc, get_sent_tree, get_tree_stats, get_clauses_v2,
+)
+
+cache = lru_cache(maxsize=None)
 from bs4 import BeautifulSoup
 from spacy import displacy
 from IPython.display import HTML, display
@@ -873,3 +892,205 @@ def find_parallelism(sent, max_n=10, center_pos = {'SCONJ', 'CCONJ', 'ADP'}):
     return ld
     
             
+
+def get_space_after(sent):
+    o=[]
+    for w in sent.tokens:
+        wd = w.to_dict()[0]
+        o.append('SpaceAfter=No' in wd.get('misc',''))
+    return o
+
+
+def get_sent_html_simple(
+    sent,
+    feat_bold=None,
+    feat_italic=None,
+    feat_underline=None,
+    show_clause_labels=False,
+    list_tag='ul',
+):
+    if list_tag not in {'ul', 'ol'}:
+        raise ValueError("list_tag must be 'ul' or 'ol'")
+
+    clause_df = get_syntax_df(sent).copy()
+
+    def _normalize_spec(spec):
+        if spec is None:
+            return set(), set()
+        if isinstance(spec, dict):
+            dep = spec.get('deprel', [])
+            pos = spec.get('pos', [])
+            dep = {dep} if isinstance(dep, str) else set(dep)
+            pos = {pos} if isinstance(pos, str) else set(pos)
+            return dep, pos
+        values = {spec} if isinstance(spec, str) else set(spec)
+        dep = set()
+        pos = set()
+        for v in values:
+            if isinstance(v, str) and v.startswith('deprel_'):
+                dep.add(v[len('deprel_'):])
+            elif isinstance(v, str) and v.startswith('pos_'):
+                pos.add(v[len('pos_'):])
+            else:
+                dep.add(v)
+                pos.add(v)
+        return dep, pos
+
+    def _matches(row, spec):
+        dep_set, pos_set = _normalize_spec(spec)
+        return (row.word_deprel in dep_set) or (row.word_pos in pos_set)
+
+    def _style_word(row):
+        txt = html.escape(str(row.word))
+        if _matches(row, feat_underline):
+            txt = f"<u>{txt}</u>"
+        if _matches(row, feat_italic):
+            txt = f"<i>{txt}</i>"
+        if _matches(row, feat_bold):
+            txt = f"<b>{txt}</b>"
+        if row.word_space_after:
+            txt += ' '
+        return txt
+
+    rows = clause_df.sort_values('word_i').itertuples(index=False)
+
+    segments = []
+    active_clause_id = None
+    for row in rows:
+        clause_id = active_clause_id if row.word_deprel == 'punct' else row.clause_id
+        if clause_id is None:
+            clause_id = row.clause_id
+
+        if not segments or segments[-1]['clause_id'] != clause_id:
+            segments.append(
+                {
+                    'clause_id': clause_id,
+                    'depth': max(0, int(row.clause_depth)),
+                    'label': 'IC' if row.clause_type == 'main' else 'DC',
+                    'words': [],
+                    'children': [],
+                }
+            )
+        segments[-1]['words'].append(_style_word(row))
+        active_clause_id = clause_id
+
+    if not segments:
+        return f'<{list_tag}></{list_tag}>'
+
+    root = {'children': []}
+    stack = [root]  # stack length = current depth + 1 (root)
+
+    for seg in segments:
+        depth = seg['depth']
+        while len(stack) > depth + 1:
+            stack.pop()
+        node = {
+            'label': seg['label'],
+            'depth': depth,
+            'text': ''.join(seg['words']),
+            'children': [],
+        }
+        stack[-1]['children'].append(node)
+        stack.append(node)
+
+    def _render(nodes):
+        out = [f'<{list_tag}>']
+        for node in nodes:
+            out.append('<li>')
+            if show_clause_labels:
+                out.append(f"{node['label']}d{node['depth']}: ")
+            out.append(node['text'])
+            if node['children']:
+                out.append(_render(node['children']))
+            out.append('</li>')
+        out.append(f'</{list_tag}>')
+        return ''.join(out)
+
+    return _render(root['children'])
+
+
+def get_sents_html_simple(
+    sents,
+    feat_bold=None,
+    feat_italic=None,
+    feat_underline=None,
+    show_clause_labels=False,
+    sentence_list_tag='ol',
+    clause_list_tag='ol',
+):
+    if sentence_list_tag not in {'ul', 'ol'}:
+        raise ValueError("sentence_list_tag must be 'ul' or 'ol'")
+    if clause_list_tag not in {'ul', 'ol'}:
+        raise ValueError("clause_list_tag must be 'ul' or 'ol'")
+
+    out = [f'<{sentence_list_tag}>']
+    for sent in sents:
+        out.append('<li>')
+        out.append(
+            get_sent_html_simple(
+                sent,
+                feat_bold=feat_bold,
+                feat_italic=feat_italic,
+                feat_underline=feat_underline,
+                show_clause_labels=show_clause_labels,
+                list_tag=clause_list_tag,
+            )
+        )
+        out.append('</li>')
+    out.append(f'</{sentence_list_tag}>')
+    return ''.join(out)
+
+
+def get_slice_html_simple(slice_id, df_feats_z=None, **kwargs):
+    df_meta = get_corpus_metadata()
+    text_id = slice_id.split('__')[0]
+    text_row = df_meta.loc[text_id]
+    feat_row = STASH_SLICE_FEATS.get(slice_id)
+    out = [f'<h3><a href="https://{text_row.url}">{text_row.author}, “{text_row.title},” <i>{text_row.journal}</i> ({text_row.year})</a> [{slice_id}]</h3>']
+    if df_feats_z is not None:
+        out.append('<ul>')
+
+        feats = {}
+        for k in kwargs:
+            kx = k.replace('feat_', '')
+            if k.startswith('feat_'):
+                v = kwargs[k]
+                if isinstance(v, str):
+                    feats[v] = kx
+                elif isinstance(v, dict):
+                    for k2 in v:
+                        for vv in v[k2]:
+                            feats[f'{k2}_{vv}'] = kx
+        
+        for f, kx in feats.items():
+            fx = 'b' if kx == 'bold' else 'i' if kx == 'italic' else 'u' if kx == 'underline' else 's' if kx == 'strikethrough' else 'b'
+            fz = df_feats_z.loc[slice_id, f]
+            out.append(f'<li><{fx}>{f}</{fx}>: {feat_row.get(f, 0):.1f} / 1000 words = {"+" if fz > 0 else ""}{fz:.1f}z</li>')
+        out.append('</ul>')
+
+    doc = stanza.Document.from_serialized(STASH_SLICES_NLP[slice_id])
+    sents = doc.sentences
+    htmlx=get_sents_html_simple(sents, **kwargs)
+    latex = html_to_latex(htmlx)
+    htmlx1 = htmlx.replace('<ol>','').replace('</ol>','').replace('<li>','').replace('</li>','')
+    htmlx2 = (
+        htmlx
+        .replace('<b>', '<span style="background-color: yellow; font-weight: bold;">').replace('</b>', '</span>')
+        .replace('<i>', '<span style="background-color: yellow; font-style: italic;">').replace('</i>', '</span>')
+        .replace('<u>', '<span style="background-color: yellow; text-decoration: underline;">').replace('</u>', '</span>')
+    )
+    # out.append(htmlx1)
+    out.append(htmlx2)
+    out.append(f'<pre>{latex}</pre>')
+    return '\n'.join(out)
+
+def get_slices_html_simple(slice_ids, *args, **kwargs):
+    out = []
+    for slice_id in tqdm(slice_ids):
+        try:
+            out.append(get_slice_html_simple(slice_id, *args, **kwargs))
+            out.append('<hr>')
+        except Exception as e:
+            print(f"Error getting slice html for {slice_id}: {e}")
+    return '\n'.join(out)
+

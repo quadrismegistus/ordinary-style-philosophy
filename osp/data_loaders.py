@@ -1,4 +1,25 @@
-from . import *
+import os
+import json
+from collections import Counter
+from functools import lru_cache
+
+import pandas as pd
+import orjsonl
+import nltk
+from tqdm import tqdm
+from hashstash import stashed_result
+
+from .constants import (
+    PATH_METADATA, PATH_TXT, PATH_WORDDB, PATH_NON_CONTENT_WORDS,
+    PATH_MDW_DATA, PATH_TOTAL_TEXT_COUNTS,
+    FN_PMLA, FN_JSTOR, FN_JSTOR_DATA,
+    CORPUS_MIN_YEAR, CORPUS_MAX_YEAR, CORPUS_PERIODIZE_BY,
+    TOTAL_PMLA, TOTAL_JSTOR, TOTAL_JSTOR_DATA,
+    WORDSETS, DF_STASH, STASH_COUNTS,
+)
+
+cache = lru_cache(maxsize=None)
+
 
 def rename_journal(journal):
     if 'Erkenntnis' in journal:
@@ -17,12 +38,10 @@ def iter_jsonl(fn, total=None):
 
 
 def iter_pmla():
-    from .constants import FN_PMLA, TOTAL_PMLA
     yield from iter_jsonl(FN_PMLA, total=TOTAL_PMLA)
 
 
 def iter_jstor():
-    from .constants import FN_JSTOR, TOTAL_JSTOR
     yield from iter_jsonl(FN_JSTOR, total=TOTAL_JSTOR)
 
 
@@ -35,7 +54,6 @@ def get_pmla_df():
 
 @DF_STASH.stashed_result
 def get_jstor_data():
-    from .constants import FN_JSTOR_DATA, TOTAL_JSTOR_DATA
     df = pd.DataFrame(iter_jsonl(FN_JSTOR_DATA, total=TOTAL_JSTOR_DATA))
     df = df.rename(columns={'iid': 'id'})
     ids = set(df.id)
@@ -68,9 +86,6 @@ def get_half_century(year):
 
 @cache
 def get_corpus_metadata(path=None, periodize_by=None, min_year=None, max_year=None):
-    # from .constants import METADATA, PATH_METADATA, CORPUS_MIN_YEAR, CORPUS_MAX_YEAR, CORPUS_PERIODIZE_BY
-    # import osp.constants as constants
-    
     if path is None:
         path = PATH_METADATA
     if min_year is None:
@@ -95,7 +110,6 @@ def get_corpus_metadata(path=None, periodize_by=None, min_year=None, max_year=No
     df['century_journal'] = df['century'] + ' ' + df['journal']
     df['journal_orig'] = df['journal']
     df['journal'] = df['journal'].fillna('').apply(rename_journal)
-    # constants.METADATA = df
     return df
 
 
@@ -106,9 +120,7 @@ def get_text_metadata(id):
 
 
 def get_corpus_txt(id):
-    from .constants import PATH_TXT
     from .text_processing import dehyphenate
-    
     fn = os.path.join(PATH_TXT, id + '.txt')
     with open(fn, 'r') as f:
         txt = f.read()
@@ -125,9 +137,7 @@ def iter_corpus_txt():
 
 
 def count_tokens(id, force=False):
-    from .constants import STASH_COUNTS
     from .text_processing import tokenize
-    
     if not force and id in STASH_COUNTS:
         return STASH_COUNTS[id]
     txt = get_corpus_txt(id)
@@ -137,8 +147,6 @@ def count_tokens(id, force=False):
 
 
 def get_total_text_counts(path=None, force=False):
-    from .constants import STASH_COUNTS, PATH_TOTAL_TEXT_COUNTS
-    
     if path is None:
         path = PATH_TOTAL_TEXT_COUNTS
     
@@ -170,8 +178,6 @@ def get_top_words(n=10, remove_stopwords=True, except_first_n=100):
 
 @cache
 def get_worddb(path=None):
-    from .constants import PATH_WORDDB
-    
     if path is None:
         path = PATH_WORDDB
     
@@ -204,8 +210,6 @@ def get_non_content_words_orig():
 
 
 def load_non_content_words(path=None):
-    from .constants import PATH_NON_CONTENT_WORDS
-    
     if path is None:
         path = PATH_NON_CONTENT_WORDS
     
@@ -213,8 +217,6 @@ def load_non_content_words(path=None):
 
 
 def get_non_content_words(path=None):
-    from .constants import PATH_NON_CONTENT_WORDS
-    
     if path is None:
         path = PATH_NON_CONTENT_WORDS
     
@@ -223,8 +225,6 @@ def get_non_content_words(path=None):
 
 
 def load_mdw_data(path=None):
-    from .constants import PATH_MDW_DATA
-    
     if path is None:
         path = PATH_MDW_DATA
     
@@ -232,8 +232,6 @@ def load_mdw_data(path=None):
 
 
 def get_mdw_words(path=None, wordset="top", absval=True):
-    from .constants import PATH_MDW_DATA
-    
     if path is None:
         path = PATH_MDW_DATA
     
@@ -244,8 +242,6 @@ def get_mdw_words(path=None, wordset="top", absval=True):
 
 
 def get_top_mdw_words(n=100, path=None, wordset="top", absval=True):
-    from .constants import PATH_MDW_DATA
-    
     if path is None:
         path = PATH_MDW_DATA
     
@@ -264,8 +260,6 @@ def get_ok_words():
 
 
 def get_wordsets(wordsets=None, n_words=100):
-    from .constants import WORDSETS
-    
     if wordsets is None:
         wordsets = WORDSETS
     

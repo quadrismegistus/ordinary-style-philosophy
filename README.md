@@ -1,234 +1,164 @@
-# ordinary-style-philosophy
+# Ordinary Style Philosophy
 
-This repo contains the data pipeline and analysis code for the *Ordinary Style Philosophy* project.
+Code and data for the paper *Ordinary Style Philosophy*, which uses NLP and logistic regression to analyze stylistic differences between philosophy and literature journal articles from JSTOR (1900–2025).
 
-At a high level:
+## Replicating the dataset
 
-1. You start with a JSTOR export (`jsonl.gz`) plus a large JSTOR metadata file you already have.
-2. You assemble a local corpus: one `.txt` file per document + a single `data/metadata.csv`.
-3. You slice each text into fixed-length chunks (“slices”).
-4. You parse slices with Stanza (POS, dependencies, constituency).
-5. You extract slice-level features.
-6. You train simple classifiers (logistic regression) on those features and explore results in a Streamlit dashboard.
+The raw text data comes from JSTOR and cannot be redistributed. To replicate, request the corpus through [JSTOR's Text Analysis Support](https://support.jstor.org/hc/en-us/articles/32479181127575-JSTOR-Text-Analysis-Support-Getting-Started) using the item ID lists in `data/`:
 
-The “library” lives in `osp/`. Most end-to-end runs were originally done via notebooks in `notebooks/`.
+| File | Count | Description |
+|------|-------|-------------|
+| `data/jstor_ids.txt` | 32,782 | Philosophy journal articles |
+| `data/jstor_ids_nonphil.txt` | 32,276 | Non-philosophy, non-literature articles (control) |
+| `data/jstor_ids_literature.txt` | 22,335 | Literature journal articles (PMLA, ELH, etc.) |
 
----
+All files contain JSTOR item UUIDs (one per line). Submit them to JSTOR via the [dataset request form](https://www.jstor.org/ta-support/form).
 
-## Repo layout (the parts that matter for the pipeline)
+**Note on literature corpus coverage:** The full literature corpus used in the paper contains 25,343 articles, but 3,008 of these could not be resolved to JSTOR UUIDs (they are not present in the JSTOR bibliographic metadata export). Their JSTOR stable IDs are listed in `data/jstor_ids_literature_missing_uuids.txt` for reference. A replication using the 22,335 available articles should produce substantively equivalent results.
 
-- `osp/`: core pipeline code (loaders, slicing, NLP, features, models, HTML renderers).
-- `notebooks/`: one-off / batch notebooks that assemble corpus data, build stashes, run experiments.
-- `data/`: inputs and outputs.
-  - `data/raw/`: raw inputs (`*.jsonl.gz`, etc.) and HashStash caches (“stashes”).
-  - `data/txt/`: the constructed corpus (one `.txt` file per doc).
-  - `data/metadata.csv`: corpus metadata table used everywhere downstream.
-- `dashboard/`: Streamlit app that reads the stashes and feature tables.
+### Placing the data files
 
----
+Once you receive the data exports from JSTOR, place them in `data/raw/` with these names:
+
+| Expected filename | Content | Source request |
+|---|---|---|
+| `jstor_data.jsonl.gz` | Philosophy articles (full text) | `jstor_ids.txt` |
+| `jstor_metadata.jsonl.gz` | JSTOR bibliographic metadata (all of JSTOR) | Available from [JSTOR metadata page](https://jstor.org/ta-support/metadata) |
+| `LitStudiesJSTOR.jsonl` | Literature articles (full text) | `jstor_ids_literature.txt` |
+| `jstor_data_nonphil.jsonl.gz` | Non-philosophy articles (full text, optional) | `jstor_ids_nonphil.txt` |
+
+If JSTOR delivers files with different names, either rename them or set environment variables:
+
+```bash
+export OSP_FN_JSTOR_DATA=/path/to/philosophy_export.jsonl.gz
+export OSP_FN_JSTOR_METADATA=/path/to/metadata_2026-01-15.jsonl.gz
+export OSP_FN_PMLA=/path/to/literature_export.jsonl
+export OSP_FN_JSTOR_DATA_OTHER=/path/to/nonphil_export.jsonl.gz
+```
+
+Validate your setup:
+
+```bash
+osp check
+```
+
+You will also need `data/raw/worddb.byu.txt` (BYU word frequency database) for vocabulary filtering during slicing.
+
+## Setup
+
+```bash
+pip install -e ".[dev]"        # install package + test dependencies
+pip install -e ".[dashboard]"  # also install streamlit for the dashboard
+```
+
+## Running the pipeline
+
+After `pip install -e .`, the `osp` command is available:
+
+```bash
+osp pipeline                     # run all steps
+osp pipeline assemble            # run one step
+osp pipeline parse --limit 100   # parse first 100 texts only
+osp pipeline feats --num-proc 8  # parallelize feature extraction
+```
+
+### Pipeline steps
+
+| Step | Command | What it does | Output |
+|------|---------|-------------|--------|
+| 1. **assemble** | `osp pipeline assemble` | Load JSTOR/PMLA exports, write text files + metadata | `data/txt/<id>.txt`, `data/metadata.csv` |
+| 2. **slice** | `osp pipeline slice` | Split texts into 1000-recognized-word chunks | Cached in `STASH_SLICES` |
+| 3. **parse** | `osp pipeline parse` | Run Stanza NLP (POS, deps, constituency) | Cached in `STASH_SLICES_NLP` |
+| 4. **feats** | `osp pipeline feats` | Extract per-slice syntactic features | Cached in `STASH_SLICE_FEATS` |
+| 5. **classify** | `osp pipeline classify` | Train logistic regression classifiers by period | Cached in `STASH_PREDS_FEATS` |
+
+Each step depends on the prior. If a stash is deleted, regenerate from that step forward.
+
+All subcommands also work as `python -m osp.pipeline`, `python -m osp.export`, etc.
+
+## Exploring results
+
+### Streamlit dashboard
+
+```bash
+osp dashboard
+```
+
+Interactive explorer for features, predictions, and annotated passages.
+
+### Exporting derived data
+
+```bash
+osp export --output data/release/
+```
+
+Exports publication-safe derived data (no copyrighted text): metadata, feature matrices, predictions, and feature weights.
+
+Pre-computed derived data is also available from [GitHub Releases](../../releases).
+
+## Tests
+
+```bash
+pytest                                # all tests (~7s, requires stanza model)
+pytest tests/test_text_processing.py  # fast subset, no stanza needed
+pytest --cov=osp                      # with coverage report
+```
+
+## Repo layout
+
+```
+osp/                  Core library
+  constants.py          Paths, stash definitions, feature config
+  pipeline.py           CLI for running the data pipeline
+  export.py             Export derived data for publication
+  check_data.py         Validate raw data files are in place
+  data_loaders.py       Load JSTOR/PMLA data, build corpus
+  slices.py             Split texts into fixed-length chunks
+  nlp_utils.py          Stanza pipeline, clause extraction
+  features.py           Extract syntactic features (POS, deprel, TTR, sentence-level)
+  classify.py           Logistic regression with cross-validation
+  sentences.py          Sentence-level HTML rendering and analysis
+  passages.py           Passage-level HTML rendering
+  examples.py           Feature example extraction
+  statistics.py         Statistical tests and LaTeX table generation
+  word_freqs.py         Word frequency tracking
+
+dashboard/            Streamlit app
+  app.py                Navigation and page routing
+  utils.py              State management, caching helpers
+  pages/                Individual page modules
+
+notebooks/            Jupyter notebooks
+  AssembleCorpus.ipynb          Pipeline step 1 (worked example)
+  CorpusSlices.ipynb            Pipeline step 2
+  ParseSlice.ipynb              Pipeline step 3
+  GenSliceFeats.ipynb           Pipeline step 4
+  ClassifySliceFeats.ipynb      Pipeline step 5
+  DescStatsForPaper3.ipynb      Corpus and feature tables for paper
+  PredStatsForPaper.ipynb       Classification accuracy tables for paper
+  ProbsAnalyze4.ipynb           Prediction figures for paper
+  SliceFeatsDiffHist2.ipynb     Feature difference tables for paper
+  archive/                      Exploratory notebooks (not needed to reproduce)
+
+data/
+  metadata.csv                          Corpus metadata (id, title, author, year, journal, discipline)
+  jstor_ids.txt                         Philosophy JSTOR item IDs (UUIDs)
+  jstor_ids_nonphil.txt                 Non-philosophy JSTOR item IDs (UUIDs)
+  jstor_ids_literature.txt              Literature JSTOR item IDs (UUIDs)
+  jstor_ids_literature_missing_uuids.txt  Literature articles without UUIDs (stable IDs)
+  raw/                                  Raw inputs and HashStash caches (gitignored)
+
+tests/                Test suite
+figures/              Generated figures
+```
 
 ## Data conventions
 
-### IDs
+- **Document IDs**: `phil/10.2307/40231690` or `lit/461288`. The ID doubles as the path under `data/txt/`.
+- **Slice IDs**: `<text_id>__NN` (0-indexed), e.g. `phil/10.2307/40231690__03`.
+- **Comparisons**: Defined in `osp/constants.py` as `COMPARISONS` — pairs of `(name, pandas_query)` applied to `data/metadata.csv`, comparing Philosophy vs Literature in 25-year periods.
+- **Stashes**: HashStash caches in `data/raw/stash/`. If a notebook writes `HashStash('name')` without the full path, it may go to `~/.cache/hashstash` instead — this is the most common cause of "nothing shows up" issues.
 
-All documents have an `id` that also acts as the path under `data/txt/`:
+## License
 
-- Philosophy docs look like `phil/10.2307/40231690`
-- Literature/PMLA docs look like `lit/10.2307/12345678`
-
-Text files live at:
-
-`data/txt/<id>.txt`  (so the slashy id becomes folders)
-
-### Core corpus files
-
-- `data/metadata.csv`: metadata indexed by `id` (must include at least `year` and `discipline`).
-- `data/txt/.../*.txt`: one file per document, raw-ish full text.
-
-### Stashes (HashStash caches)
-
-`osp/constants.py` defines many `HashStash` stores under `data/raw/stash/`. These are used to cache slow steps:
-
-- `STASH_SLICES`: text → slices
-- `STASH_SLICES_NLP`: slice_id → serialized Stanza `Document`
-- `STASH_SLICE_FEATS`: slice_id → feature dict
-- `STASH_PREDS_FEATS`: cached classifier outputs
-
-If you delete stashes, you’ll need to regenerate downstream artifacts.
-
----
-
-## Pipeline, step by step
-
-### Step 0 — Put raw inputs in place
-
-The loader code expects these by default (see `osp/constants.py`):
-
-- `data/raw/jstor_data.jsonl.gz` (smaller “data” file; includes full text/pages)
-- `data/raw/jstor_metadata_*.jsonl.gz` (large JSTOR metadata dump)
-- Optional / legacy: `data/raw/LitStudiesJSTOR.jsonl` (PMLA/LitStudies JSONL)
-
-The exact filenames are hardcoded in `osp/constants.py` (`FN_JSTOR_DATA`, `FN_JSTOR`, `FN_PMLA`).
-
-### Step 1 — Build the corpus folder + metadata table
-
-Goal:
-
-- Write text files into `data/txt/phil/...` and/or `data/txt/lit/...`
-- Write `data/metadata.csv`
-
-The canonical implementation is in:
-
-- `notebooks/AssembleCorpus.ipynb`
-
-What it does (roughly):
-
-- Loads philosophy data via `osp.data_loaders.get_jstor_data()` (merges `jstor_data.jsonl.gz` with the large JSTOR metadata file).
-- Loads literature/PMLA data via `osp.data_loaders.get_pmla_df()` (optional).
-- Normalizes both into a single DataFrame with fields like:
-  - `id`, `uuid`, `title`, `author`, `year`, `journal`, `volume`, `issue`, `url`, `publisher`, `discipline`
-- Writes:
-  - `data/txt/<id>.txt`
-  - `data/metadata.csv`
-
-Downstream code assumes `data/metadata.csv` exists and is indexed by `id`.
-
-### Step 2 — Load and lightly clean corpus text
-
-Downstream steps don’t read the `.txt` files verbatim; they call:
-
-- `osp.data_loaders.get_corpus_txt(id)`
-
-This reads `data/txt/<id>.txt`, sentence-tokenizes with NLTK, dehyphenates line-break hyphenation, drops digit-heavy lines, and returns text as one sentence per line.
-
-### Step 3 — Slice each text into fixed-length chunks
-
-Goal: turn each text into many “slices” of a fixed length (default 1000) measured in *recognized words*.
-
-Key functions:
-
-- `osp.slices.get_text_slices(text_id, slice_len=1000)`
-- `osp.slices.iter_txt_slices(...)` (internal helper)
-
-Vocabulary filtering:
-
-- recognized words are defined by `osp.data_loaders.get_ok_words()` (derived from a word database file referenced in `osp/constants.py`)
-
-Output:
-
-- slices are cached in `STASH_SLICES` (a HashStash), keyed by `text_id`.
-- each slice has a “slice id” like `text_id__NN` (see gotcha below).
-
-The “loop over every document and slice it” example is in:
-
-- `notebooks/CorpusSlices.ipynb`
-
-### Step 4 — Parse slices (Stanza) and stash serialized docs
-
-Goal: run Stanza (`tokenize,mwt,pos,lemma,ner,depparse,constituency`) on each slice and store a serialized `stanza.Document`.
-
-Key functions:
-
-- `osp.nlp_utils.get_nlp()` (builds the Stanza pipeline)
-- `osp.nlp_utils.get_nlp_doc(txt, id=...)` (caches per-(id,txt) docs in `NLP_STASH`)
-
-In practice, the large batch parse was done in:
-
-- `notebooks/ParseSlice.ipynb`
-
-That notebook:
-
-- reads slices out of a slice stash (e.g. `osp_slices_1000`)
-- writes parsed docs to a “nlp stash” (e.g. `osp_slices_1000_nlp`)
-- stores them with:
-  - `stash[slice_id] = doc.to_serialized()`
-
-The main codebase assumes parsed slice docs are available in:
-
-- `STASH_SLICES_NLP` (configured in `osp/constants.py`)
-
-### Step 5 — Extract slice-level features
-
-Goal: compute a feature dictionary per parsed slice and store it for modeling and visualization.
-
-Key functions:
-
-- `osp.features.gen_all_slice_feats(...)`
-  - iterates `osp.features.get_parsed_slice_ids()` (which are the keys of `STASH_SLICES_NLP`)
-  - writes per-slice feature dicts into `STASH_SLICE_FEATS`
-- `osp.features.get_all_feats(...)`
-  - loads `STASH_SLICE_FEATS` into a DataFrame (rows = slice ids, columns = features)
-  - can filter feature types (default: `('pos','deprel','ttr','sent')`)
-  - can z-normalize columns for modeling
-
-### Step 6 — Train classifiers and generate predictions
-
-Goal: compare groups (usually Philosophy vs Literature within a period) using logistic regression over slice features.
-
-Comparisons are defined in:
-
-- `osp/constants.py` → `COMPARISONS`
-
-Each entry is a pair of `(name, pandas_query)` strings applied to `data/metadata.csv`.
-
-Key functions:
-
-- `osp.features.get_balanced_cv_data(groups_train, ...)`
-  - samples slice ids from the two groups (balanced)
-  - returns a feature matrix with `_type` (CV vs Unseen) and `_target`
-- `osp.classify.classify_then_predict_group(...)`
-- `osp.classify.get_preds_feats(...)`
-  - runs all comparisons and stashes results in `STASH_PREDS_FEATS`
-- `osp.features.get_current_feat_weights(...)`
-  - aggregates feature weights and produces `weight_z` used for coloring passages
-
-### Step 7 — Explore in the Streamlit dashboard
-
-The dashboard reads the corpus metadata, cached parses, features, and model outputs and provides:
-
-- feature tables / comparisons
-- predictions browsing
-- highlighted passages and sentence visualizations
-
-Entrypoint:
-
-- `dashboard/app.py`
-
-The dashboard imports `osp` and relies on the same `data/` + stashes.
-
----
-
-## Gotchas / notes
-
-### Slice numbering (`__00` vs `__01`)
-
-There is an indexing mismatch between older notebooks and current slicing code:
-
-- `osp.slices.iter_txt_slices()` currently starts slice numbers at `0` (`__00`, `__01`, ...)
-- some older notebook code and helpers were 1-indexed (`__01`, `__02`, ...)
-
-If you have “missing slice” issues (e.g. you can see slices in a stash but the dashboard can’t find them), this is the first thing to check: make sure all downstream steps (parse → feats → preds) are using the same slice-id convention.
-
-### Stash location differences
-
-Some notebooks construct `HashStash('osp_slices_1000')` without the repo’s `data/raw/stash/` pathing, which may place the stash under your global HashStash cache directory (often `~/.cache/hashstash`).
-
-The library code (`osp/constants.py`) creates stashes under `data/raw/stash/` inside this repo.
-
-If you run notebooks and later run the dashboard and “nothing shows up”, it’s often because the notebook wrote to one stash location while the dashboard is reading another.
-
----
-
-## Quick “mental model” checklist
-
-When something is missing, ask:
-
-1. Does `data/metadata.csv` contain the doc id and a sane `year` / `discipline`?
-2. Does `data/txt/<id>.txt` exist?
-3. Do slices exist in `STASH_SLICES[text_id]`?
-4. Do parsed slice docs exist in `STASH_SLICES_NLP[slice_id]`?
-5. Do features exist in `STASH_SLICE_FEATS[slice_id]`?
-6. Do predictions exist in `STASH_PREDS_FEATS` (via `osp.classify.get_preds_feats()`)?
-
-If the answer breaks at step N, regenerate from there forward.
-
+GPL-3.0

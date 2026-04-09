@@ -1,4 +1,20 @@
-from . import *
+import itertools
+import random
+from collections import defaultdict
+from functools import lru_cache
+
+import pandas as pd
+import stanza
+from tqdm import tqdm
+
+from .constants import (
+    SLICE_LEN, STASH_SLICES, STASH_SLICES_NLP, STASH_FREQS_SLICES,
+    STASH_ALL_TEXT_SLICE_IDS, STASH_WORD_FREQS as STASH_WORD_FREQS_SLICES,
+    DF_PREDS_METADATA_COLS,
+)
+
+cache = lru_cache(maxsize=None)
+
 
 def get_text_slices(id, force=False, slice_len=1000):
     from .constants import SLICE_LEN
@@ -103,8 +119,6 @@ def get_text_slice_ids(id, n_slices=10):
         for slice_id in range(1,n_slices+1)
         if f'{id}__{slice_id:02d}' in STASH_SLICES_NLP
     ]
-
-import itertools
 
 @STASH_ALL_TEXT_SLICE_IDS.stashed_result
 def get_all_text_slice_ids(lim=None):

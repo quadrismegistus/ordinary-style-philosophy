@@ -1,4 +1,8 @@
-from . import *
+import stanza
+from IPython.display import HTML, display
+
+from .constants import STASH_SLICES_NLP
+
 
 def get_passage_html(slice_id, color='score_z_diff', max_score=None, min_score=None, word_feat_type='deprel'):
     """

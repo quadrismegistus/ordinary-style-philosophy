@@ -1,4 +1,11 @@
-from . import *
+import os
+
+import numpy as np
+import pandas as pd
+import plotnine as p9
+
+from .data_loaders import get_corpus_metadata
+
 
 def fisher_test_pos(df_pos, target_col='_target', g1='Philosophy', g2='Literature'):
     """
@@ -189,3 +196,144 @@ def plot_avgs_df(figdf, **labs):
         + p9.labs(**labs)
     )
     return fig
+
+
+
+
+
+
+
+def df_to_latex_table(
+    df=None,
+    save_latex_to: str | None = None,
+    table_num: int | None = None,
+    caption: str | None = None,
+    label: str | None = None,
+    position: str = 'H',
+    center: bool = True,
+    size: str | None = '\\small',
+    singlespacing: bool = False,
+    resize_to_textwidth: bool = False,
+    column_format: str | None = None,
+    escape: bool = True,
+    index: bool = False,
+    float_format: str | None = None,
+    na_rep: str = '',
+    save_latex_to_suffix: str | None = None,
+    return_display: bool = False,
+    inner_latex: str | None = None,
+    longtable: bool = False,
+    header: list[str] | None = None,
+    verbose: bool = False,
+):
+    """Render a DataFrame (or provided LaTeX tabular) into a LaTeX table.
+
+    Parameters
+    - df: pandas.DataFrame or None if providing `inner_latex`
+    - save_latex_to: where to write the .tex (if None, only return string)
+    - table_num: optional table number prefix for caption (e.g., "Table 5: ...")
+    - caption, label: LaTeX caption and label
+    - position: table float position (e.g., 't', 'H')
+    - center: add \\centering
+    - size: e.g., '\\small' (set None to skip)
+    - singlespacing: add \\singlespacing line
+    - resize_to_textwidth: wrap tabular in \\resizebox{\\textwidth}{!}{% ... }
+    - column_format, escape, index, float_format, na_rep, header: passed to DataFrame.to_latex
+    - save_latex_to_suffix: if provided, insert before .tex (e.g., '.paper_regenerated')
+    - return_display: if True and path provided, return IPython Image of compiled PNG
+    - inner_latex: full tabular environment string to embed instead of DataFrame.to_latex
+    - longtable: pass through to DataFrame.to_latex (no outer table env when True)
+
+    Returns
+    - The LaTeX string if not saving to file, otherwise the path or display object when requested.
+    """
+    # Build tabular (or longtable) body
+    if inner_latex is not None:
+        tabular_str = inner_latex.strip()
+    else:
+        if df is None:
+            raise ValueError('Either df or inner_latex must be provided')
+        # Import pandas lazily
+        try:
+            import pandas as _pd  # noqa: F401
+        except Exception as _e:
+            raise RuntimeError('pandas is required for df_to_latex_table when df is provided') from _e
+
+        to_latex_kwargs: dict = {
+            'index': index,
+            'escape': escape,
+            'na_rep': na_rep,
+            'longtable': longtable,
+            'bold_rows': False,
+        }
+        if header is not None:
+            to_latex_kwargs['header'] = header
+        if column_format is not None:
+            to_latex_kwargs['column_format'] = column_format
+        if float_format is not None:
+            # pandas to_latex accepts a function or format string; we pass through strings
+            to_latex_kwargs['float_format'] = float_format
+        tabular_str = df.to_latex(**to_latex_kwargs).strip()
+
+    # If this is a longtable, do not wrap in a floating table environment
+    if longtable:
+        latex_str = tabular_str
+    else:
+        lines: list[str] = []
+        lines.append(f'\\begin{{table}}[{position}]')
+        if center:
+            lines.append('  \\centering')
+        if size:
+            lines.append(f'  {size}')
+        if singlespacing:
+            lines.append('  \\singlespacing')
+        if resize_to_textwidth:
+            lines.append('  \\resizebox{\\textwidth}{!}{%')
+        # Ensure the tabular begins on its own line with correct indentation
+        lines.append('  ' + tabular_str.replace('\n', '\n  '))
+        if resize_to_textwidth:
+            lines.append('  }')
+        _caption_prefix = f'Table {table_num}: ' if table_num is not None else ''
+        if caption is not None:
+            lines.append(f'  \\caption{{{_caption_prefix}{caption}}}')
+        if label is not None:
+            lines.append(f'  \\label{{{label}}}')
+        lines.append('\\end{table}')
+        latex_str = '\n'.join(lines)
+
+    # Save to file if requested
+    if save_latex_to:
+        if save_latex_to_suffix:
+            if save_latex_to.endswith('.tex'):
+                save_path = save_latex_to.replace('.tex', f'.{save_latex_to_suffix}.tex')
+            else:
+                save_path = f'{save_latex_to}.{save_latex_to_suffix}'
+        else:
+            save_path = save_latex_to
+        if not save_path.endswith('.tex'):
+            save_path += '.tex'
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        with open(save_path, 'w') as f:
+            if verbose:
+                printm(f'* Writing LaTeX to `{nice_path(save_path)}`')
+            f.write(latex_str)
+
+        if return_display:
+            try:
+                from IPython.display import Image  # type: ignore
+                png_path = save_path[:-4] + '.png' if save_path.endswith('.tex') else save_path + '.png'
+                try:
+                    ok = render_latex_to_png(latex_str, png_path)
+                except Exception as e:
+                    printm(f'* Warning: Could not render PNG: {e}')
+                    pass
+                if ok:
+                    return Image(png_path)
+                else:
+                    if verbose:
+                        printm(f"* warning: could not render PNG")
+            except (NameError, ImportError):
+                pass
+        return save_path
+
+    return latex_str

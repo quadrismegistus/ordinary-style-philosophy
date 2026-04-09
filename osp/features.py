@@ -1,4 +1,28 @@
-from . import *
+import random
+import time
+import multiprocessing as mp
+from collections import Counter, defaultdict
+from functools import lru_cache
+
+import numpy as np
+import pandas as pd
+import stanza
+from tqdm import tqdm
+
+from .constants import (
+    STASH_POS_COUNTS, STASH_SENT_FEAT_COUNTS, STASH_FEAT2WORD2COUNT,
+    STASH_FEAT2WORD2EG, STASH_SLICE_FEATS, STASH_SLICES_NLP,
+    STASH_PARSED_SLICE_IDS, STASH_ALL_FEATS, STASH_FEAT_EXAMPLES2,
+    STASH_FEAT_EG_CACHE,
+    BAD_SLICE_FEATS, BAD_POS, BAD_DEPREL,
+    FEAT_N, FEAT_MIN_COUNT, MAX_FEATSET_FEATS,
+    FEAT2DESC, COMPARISONS, COLS_FEATS,
+    CV_FEAT_TYPES, NORMALIZE_FEAT_DATA, NORMALIZE_CLASSIFY_DATA,
+)
+from .data_loaders import get_corpus_metadata, get_text_metadata
+
+cache = lru_cache(maxsize=None)
+
 
 def get_pos_counts(ids, incl_deprel=True, incl_pos=True):
     from .constants import STASH_POS_COUNTS
@@ -18,7 +42,6 @@ def get_pos_counts(ids, incl_deprel=True, incl_pos=True):
             rows.append(odx)
     return pd.DataFrame(rows, index=index).rename_axis('id').fillna(0).applymap(int)
 
-# @stashed_result
 def get_pos_word_counts(ids):
     from .constants import STASH_FEAT2WORD2COUNT
     
@@ -30,7 +53,6 @@ def get_pos_word_counts(ids):
                 all_feat2word2count[feat].update(word2count)
     return all_feat2word2count
 
-# @stashed_result
 def get_pos_word_egs(ids):
     from .constants import STASH_FEAT2WORD2EG
     
@@ -57,37 +79,6 @@ def get_egs(word2count, n=None, min_count=None, word2eg={}, incl_count=False):
             o.append(f'{w} ({c})' if incl_count else f'{w}')
             break
     return ' '.join(o)
-
-
-# def get_slice_feats(id):
-#     from .constants import STASH_POS_COUNTS, STASH_SENT_FEAT_COUNTS, BAD_SLICE_FEATS
-    
-#     posfeat_counts = STASH_POS_COUNTS.get(id, {})
-#     deprel_counts = {k: v for k, v in posfeat_counts.items() if k == k.lower()}
-#     pos_counts = {k: v for k, v in posfeat_counts.items() if k == k.upper()}
-
-#     sent_feat_counts = STASH_SENT_FEAT_COUNTS.get(id, {})
-#     sent_feat_counts_df = pd.DataFrame(sent_feat_counts)
-
-#     sent_sums = sent_feat_counts_df.sum(numeric_only=True)
-#     num_words = sent_sums['num_words']
-#     num_sents = len(sent_feat_counts)
-#     sent_sums['num_sents'] = num_sents
-#     total_clauses = sent_sums['num_independent_clauses'] + sent_sums['num_dependent_clauses']
-#     out_sent_d = {
-#         'avg_num_sents': num_sents / num_words * 1000,
-#         'avg_num_words_per_sent': num_words / num_sents,
-#         'avg_height': sent_sums['height'] / num_sents,
-#         'perc_dependent_clauses': sent_sums['num_dependent_clauses'] / total_clauses,
-#         'perc_independent_clauses': sent_sums['num_independent_clauses'] / total_clauses,
-#         'avg_num_words_per_clause': num_words / total_clauses,
-#     }
-#     out = {
-#         **{f'sent_{k}': v for k, v in out_sent_d.items()},
-#         **{f'pos_{k}': v for k, v in pos_counts.items() if k and k[0].isalpha()},
-#         **{f'deprel_{k}': v for k, v in deprel_counts.items() if k and k[0].isalpha()},
-#     }
-#     return {k: v for k, v in sorted(out.items()) if not any(k.startswith(b) for b in BAD_SLICE_FEATS)}
 
 
 def get_valid_feat_keys():
@@ -125,9 +116,6 @@ def get_all_feats(normalize=NORMALIZE_FEAT_DATA, feat_types=CV_FEAT_TYPES, **kwa
         odf[c] = pd.to_numeric(odf[c], errors='coerce').fillna(0)
     odf = odf.fillna(0)
 
-    # # replace less-than-0 values with 0
-    # odf = odf.applymap(lambda x: 0 if x < 0 else x)
-
     if normalize:
         for c in odf.columns:
             cmean = odf[c].mean()
@@ -157,7 +145,6 @@ def get_all_feats_stashed():
     
 
 
-# @stashed_result
 def get_mdw_feats(groups_train, feat_n=10, feat_n_egs=5, **kwargs):
     name1,q1 = groups_train[0]
     name2,q2 = groups_train[1]
@@ -191,25 +178,12 @@ def get_mdw_feats(groups_train, feat_n=10, feat_n_egs=5, **kwargs):
             'feature': feat,
             'feat_desc': FEAT2DESC.get(feat_name, ''),
             'comparison': f'{name1} vs {name2}',
-            # 'group0': 'Unseen',
             'group1': name1,
             'group2': name2,
-            # 'score_mean0': dfx_raw.loc['Unseen'],
             'score_mean1': dfx_raw.loc[name1],
             'score_mean2': dfx_raw.loc[name2],
-            # 'score_mean_diff': dfx_raw.loc[name1] - dfx_raw.loc[name2],
-            # 'score_mean_diff_abs': abs(dfx_raw.loc[name1] - dfx_raw.loc[name2]),
-            # 'score_mean_diff_pct': abs(dfx_raw.loc[name1] - dfx_raw.loc[name2]) / dfx_raw.loc[name2] if dfx_raw.loc[name2]!=0 else None,
-            # 'score_mean_div': dfx_raw.loc[name1] / dfx_raw.loc[name2] if dfx_raw.loc[name2]!=0 else None,
-            # 'score_mean_div_abs': abs(dfx_raw.loc[name1] / dfx_raw.loc[name2] if dfx_raw.loc[name2]!=0 else None),
-            # 'score_z0': dfx_z.loc['Unseen'],
             'score_z1': dfx_z.loc[name1],
             'score_z2': dfx_z.loc[name2],
-            # 'score_z_diff': dfx_z.loc[name1] - dfx_z.loc[name2],
-            # 'score_z_diff_abs': abs(dfx_z.loc[name1] - dfx_z.loc[name2]),
-            # 'score_z_diff_pct': abs(dfx_z.loc[name1] - dfx_z.loc[name2]) / dfx_z.loc[name2] if dfx_z.loc[name2]!=0 else None,
-            # 'score_z_div': dfx_z.loc[name1] / dfx_z.loc[name2] if dfx_z.loc[name2]!=0 else None,
-            # 'score_z_div_abs': abs(dfx_z.loc[name1] / dfx_z.loc[name2] if dfx_z.loc[name2]!=0 else None),
             'words1': words1_str,
             'words2': words2_str,
             'egs1': egs1_str,
@@ -228,7 +202,6 @@ def is_numeric(x):
 
 
 def get_top_word_egs(word2count, n=None, min_count=None, incl_count=False):
-    # from .constants import FEAT_N, FEAT_MIN_COUNT
     word2count = Counter({x:int(i) for x,i in word2count.items() if is_numeric(i)})
     if n is None:
         n = FEAT_N
@@ -640,7 +613,7 @@ def extract_syntax_feats_sent(sent, incl_formula=False, max_n_clauses=5):
     out_d['DCw']=len(df_words[df_words.clause_type=='sub'])
     out_d['ICw']=len(df_words[df_words.clause_type!='sub'])
 
-    avg_s = df.max(numeric_only=True).round(0)
+    avg_s = df.select_dtypes(include='number').max()
     out_d['Wd'] = int(avg_s['word_depth'])
     out_d['Cd'] = int(avg_s['clause_depth']) + 1
 
@@ -717,11 +690,9 @@ def get_balanced_slice_sample_feats(groups_train, df_smpl=None, sample_size=None
         balance=balance
     ) if df_smpl is None else df_smpl
 
-    print(f"Loading features for {len(df_smpl):,} slices...")
     df_all_feats_z = get_all_feats(normalize=True)
     df_all_feats_raw = get_all_feats(normalize=False)
 
-    print(f"Filtering valid slices...")
     valid_ids = set(df_smpl.slice_id) & set(df_all_feats_z.index)
     df_smpl_valid = df_smpl[df_smpl.slice_id.isin(valid_ids)].set_index('slice_id')
     df_smpl_feats_z = df_all_feats_z.loc[df_smpl_valid.index].copy()
@@ -729,7 +700,6 @@ def get_balanced_slice_sample_feats(groups_train, df_smpl=None, sample_size=None
     
     df_smpl_feats_raw = df_all_feats_raw.loc[df_smpl_valid.index].copy()
 
-    print(f"Aggregating feature statistics...")
     # Optimized approach using melt
     feat_cols = [c for c in df_smpl_feats_z.columns if c and c[0] != '_']
     
@@ -750,7 +720,6 @@ def get_balanced_slice_sample_feats(groups_train, df_smpl=None, sample_size=None
     odf = odf.rename(columns={'_target': 'target'})
     odf = odf.groupby(['feat','target']).mean(numeric_only=True).reset_index()
 
-    print(f"Computing difference rows...")
     df_diff_rows = get_diff_rows(odf, group1=name1, group2=name2)
     feat2zdiff = df_diff_rows.groupby('feat').z.mean()
     feat2rawdiff = df_diff_rows.groupby('feat').raw.mean()
@@ -785,119 +754,6 @@ def get_balanced_slice_sample_feats(groups_train, df_smpl=None, sample_size=None
     # ranked_feat2max_abs_z = feat2max_abs_z.rank(method='dense', ascending=False).apply(int)    
     # odf['feat_rank'] = odf['feat'].map(ranked_feat2max_abs_z)
     return odf.sort_values(['feat_rank', 'z'],ascending=[True, False]).set_index(['feat','target'])
-
-# def get_slices_feats(slice_ids, normalize=True):
-#     from .slices import get_slice_ids
-#     slice_ids = get_slice_ids(slice_ids)
-#     df_all_feats = get_all_feats(normalize=normalize)
-#     valid_ids = list(set(slice_ids) & set(df_all_feats.index))
-#     df_slices_feats = df_all_feats.loc[valid_ids]
-#     return df_slices_feats
-
-def get_slices_feats(slice_ids):
-    out = []
-    for slice_id in slice_ids:
-        res_d = STASH_SLICE_FEATS.get(slice_id, None)
-        if res_d:
-            out.append(res_d)
-    return pd.DataFrame(out, index=slice_ids).rename_axis('slice_id')
-
-# def get_feat_egs(df_feats, feats, n=1):
-#     out_feat2egs = {}
-#     if df_feats is None or df_feats.empty:
-#         print("get_feat_egs: df_feats is empty")
-#         return out_feat2egs
-        
-#     print(f"get_feat_egs: searching for examples for {len(feats)} features in {len(df_feats)} slices")
-    
-#     # Pre-filter features present in df_feats
-#     valid_feats = [f for f in feats if f in df_feats.columns]
-    
-#     for feat in valid_feats:
-#         feat_egs = []
-#         top_slices = df_feats.sort_values(by=feat, ascending=False)
-        
-#         # Look at top slices for this feature
-#         slices_checked = 0
-#         for slice_id in top_slices.index:
-#             # Check if feature has a value in this slice
-#             if top_slices.loc[slice_id, feat] <= 0:
-#                 break
-            
-#             slices_checked += 1
-#             if slices_checked > 100: # Don't search forever
-#                 break
-                
-#             egs_feat2word2eg = STASH_FEAT2WORD2EG.get(slice_id, {})
-#             if not egs_feat2word2eg:
-#                 # Try getting it directly if .get() is weird
-#                 try:
-#                     egs_feat2word2eg = STASH_FEAT2WORD2EG[slice_id]
-#                 except:
-#                     continue
-            
-#             if not egs_feat2word2eg:
-#                 continue
-            
-#             # The key in the stash might be 'NOUN' while the feature is 'pos_NOUN'
-#             word2eg = egs_feat2word2eg.get(feat)
-#             if not word2eg:
-#                 feat_parts = feat.split('_', 1)
-#                 if len(feat_parts) > 1:
-#                     word2eg = egs_feat2word2eg.get(feat_parts[1])
-            
-#             if not word2eg:
-#                 continue
-            
-#             # Found examples for this feature in this slice
-#             words = [w for w in word2eg.keys() if word2eg[w]]
-#             if not words:
-#                 continue
-                
-#             word = random.choice(words)
-#             eg = word2eg[word]
-            
-#             # Clean up example text
-#             eg_text = str(eg).strip()
-#             # If example is too long, truncate it
-#             if len(eg_text) > 250:
-#                 eg_text = eg_text[:250] + "..."
-                
-#             # Add metadata to the link
-#             meta = get_text_metadata(slice_id)
-#             title = meta.get('title', slice_id)
-#             author = meta.get('author', 'Unknown')
-            
-#             feat_egs.append(f'* **{word}**: “{eg_text}” — *{author}, [{title}](/Passages?slice_id={slice_id})*')
-            
-#             if n and len(feat_egs) >= n:
-#                 out_feat2egs[feat] = feat_egs
-#                 break
-    
-#     print(f"get_feat_egs: found examples for {len(out_feat2egs)} features")
-#     return out_feat2egs        
-
-# @STASH_FEAT_GROUP_EGS.stashed_result
-# def get_feat_group_egs(feats, groups=None, n=None, normalize=False):
-#     from .slices import get_slice_ids
-#     if isinstance(feats, str):
-#         feats = [feats]
-#     if groups is None:
-#         groups = COMPARISONS[0]
-    
-#     name1,query1 = groups[0]
-#     name2,query2 = groups[1]
-
-#     slice_ids1 = get_slice_ids(query1)
-#     slice_ids2 = get_slice_ids(query2)
-
-#     # Use un-normalized feature counts by default so we can reliably find "top slices"
-#     # with positive values (needed for example extraction).
-#     df_feats1 = get_slices_feats(slice_ids1, normalize=normalize)
-#     df_feats2 = get_slices_feats(slice_ids2, normalize=normalize)
-
-#     return get_feat_egs(df_feats1, feats, n), get_feat_egs(df_feats2, feats, n)
-
 
 def get_slices_feats(slice_ids):
     out = []
@@ -958,14 +814,9 @@ def get_feat_group_egs(feats, groups=None, num_egs=10):
 
 def get_slice_feat_egs(slice_ids=None, feats=None, num_egs=5, max_slices=1000):
     key = (tuple(slice_ids), tuple(feats), num_egs, max_slices)
-    print(key in STASH_FEAT_EG_CACHE)
     if key in STASH_FEAT_EG_CACHE:
         return STASH_FEAT_EG_CACHE[key]
-    
-    
-    print('get slice feat egs')
-    print(slice_ids[-3:])
-    now = time.time()
+
     if slice_ids is None:
         slice_ids = get_parsed_slice_ids()
     if isinstance(feats, str):
@@ -989,7 +840,6 @@ def get_slice_feat_egs(slice_ids=None, feats=None, num_egs=5, max_slices=1000):
                     d['slice_id'] = slice_id
                     egs[feat].append(d)
 
-    print(f'get slice feat egs done in {time.time() - now:.2f} seconds')
     odf = pd.DataFrame([vx for vl in egs.values() for vx in vl]).sample(frac=1)
     STASH_FEAT_EG_CACHE[key] = odf
     return odf

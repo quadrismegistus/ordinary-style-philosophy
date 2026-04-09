@@ -5,7 +5,7 @@ import re
 import json
 import random
 import numpy as np
-from collections import Counter
+from collections import Counter, defaultdict
 import string
 from pprint import pprint
 from tqdm import tqdm
@@ -14,13 +14,10 @@ import orjsonl
 import pandas as pd
 from hashstash import HashStash, stashed_result
 import nltk
-from collections import defaultdict
 import stanza
-import re
 import plotnine as p9
 from functools import lru_cache
-import json
-from IPython.display import HTML,display,Markdown
+from IPython.display import HTML, display, Markdown
 import html
 import multiprocessing as mp
 

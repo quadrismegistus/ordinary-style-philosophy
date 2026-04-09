@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ordinary-style-philosophy"
+version = "0.1.0"
+description = "NLP pipeline for analyzing stylistic differences between philosophy and literature journal articles"
+license = "GPL-3.0-only"
+requires-python = ">=3.10"
+dependencies = [
+    "stanza",
+    "orjsonl",
+    "tqdm",
+    "pandas",
+    "hashstash[rec]",
+    "nltk",
+    "svgling",
+    "plotnine",
+    "scikit-learn",
+    "st-annotated-text",
+    "IPython",
+    "altair",
+    "logmap",
+    "beautifulsoup4",
+    "spacy",
+    "openpyxl",
+]
+
+[project.optional-dependencies]
+dashboard = [
+    "streamlit",
+]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+[project.scripts]
+osp = "osp.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: tests that load stanza (slow to start)",
+]
+
+[tool.setuptools.packages.find]
+include = ["osp*"]
