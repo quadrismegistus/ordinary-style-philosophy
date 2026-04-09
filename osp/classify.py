@@ -49,8 +49,8 @@ def classify_data(
     df_data = _data.drop(columns=[target_col])
     for c in df_data:
         df_data[c] = pd.to_numeric(df_data[c], errors="coerce")
-    X_data_norm = df_data.fillna(0).values
-    y_data = _data[target_col].fillna("").values
+    X_data_norm = df_data.fillna(0).to_numpy()
+    y_data = _data[target_col].fillna("").to_numpy()
 
     # Mean feature values per target (for interpreting weights)
     # Use the same numeric + fillna(0) treatment as the classifier input.
