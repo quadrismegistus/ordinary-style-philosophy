@@ -13,7 +13,7 @@ dependencies = [
     "orjsonl",
     "tqdm",
     "pandas",
-    "hashstash[rec]",
+    "hashstash[rec]==0.6.0",
     "nltk",
     "svgling",
     "plotnine",
