@@ -2,7 +2,7 @@ stanza
 orjsonl
 tqdm
 pandas
-hashstash[rec]
+hashstash[rec]==0.6.0
 IProgress
 nltk
 svgling
